@@ -15,7 +15,7 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <ErrorBoundary>
-    <BrowserRouter>
+    <BrowserRouter basename="/rentizo">
       <QueryClientProvider client={queryClient}>
         <ThemeProvider theme={theme}>
           <LocalizationProvider dateAdapter={AdapterDateFns}>
