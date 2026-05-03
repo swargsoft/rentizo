@@ -7,6 +7,7 @@ import TwoWheelerIcon from "@mui/icons-material/TwoWheeler";
 export default function Landing() {
   const navigate = useNavigate();
   const { pubkey, sessionUnlocked, role } = useAuthStore();
+  const baseUrl = import.meta.env.BASE_URL;
 
   useEffect(() => {
     if (pubkey && sessionUnlocked) {
@@ -44,7 +45,7 @@ export default function Landing() {
       >
         <Box
           component="img"
-          src="/images/logo-without-name.png"
+          src={`${baseUrl}images/logo-without-name.png`}
           alt="vehicle"
           sx={{
             width: 200,
