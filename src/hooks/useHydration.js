@@ -12,11 +12,11 @@ function parseContent(event) {
 }
 
 export function useHydration() {
-  const { pubkey, secretKey } = useAuthStore()
+  const { pubkey, secretKey, sessionUnlocked } = useAuthStore()
   const { setHydrated, setSyncing, setLastSyncAt } = useNostrStore()
 
   useEffect(() => {
-    if (!pubkey || !secretKey) return
+    if (!pubkey || !secretKey || !sessionUnlocked) return
     let cancelled = false
 
     async function run() {
@@ -93,5 +93,5 @@ export function useHydration() {
 
     run()
     return () => { cancelled = true }
-  }, [pubkey, secretKey])
+  }, [pubkey, secretKey, sessionUnlocked])
 }

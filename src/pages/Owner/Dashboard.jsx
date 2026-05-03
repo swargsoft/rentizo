@@ -1,4 +1,4 @@
-import { Box, Typography, Stack, Card, CardActionArea, Chip, Divider } from '@mui/material'
+import { Box, Typography, Stack, Card, CardActionArea, Chip, Divider, Button } from '@mui/material'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import AppLayout from '@/components/Common/AppLayout.jsx'
@@ -10,6 +10,7 @@ import TwoWheelerIcon  from '@mui/icons-material/TwoWheeler'
 import BookmarksIcon   from '@mui/icons-material/Bookmarks'
 import SyncIcon        from '@mui/icons-material/Sync'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import RefreshIcon     from '@mui/icons-material/Refresh'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 
@@ -63,6 +64,16 @@ export default function OwnerDashboard() {
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             {syncing ? 'Syncing with relays…' : syncLabel}
           </Typography>
+          {!syncing && (
+            <Button
+              size="small"
+              startIcon={<RefreshIcon />}
+              onClick={() => window.location.reload()} // Simple reload to re-trigger hydration
+              sx={{ ml: 1, fontSize: '0.7rem', py: 0.5, px: 1 }}
+            >
+              Sync
+            </Button>
+          )}
         </Stack>
 
         {/* Stats grid */}
