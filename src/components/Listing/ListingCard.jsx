@@ -27,7 +27,7 @@ export default function ListingCard({ listing, imageUrl, onEdit, onPress, showEd
           <Stack direction="row" alignItems="flex-start" justifyContent="space-between">
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, noWrap: true }}>{listing.vehicleName}</Typography>
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>{listing.vehicleNumber}</Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>{listing.vehicleNumber?.toUpperCase()}</Typography>
             </Box>
             {showEdit && (
               <IconButton component="span" size="small" onClick={e => { e.stopPropagation(); onEdit?.() }} sx={{ color: 'text.secondary', mt: -0.5 }}>

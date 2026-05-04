@@ -32,6 +32,7 @@ export default function OwnerDashboard() {
   const navigate   = useNavigate()
   const { pubkey } = useAuthStore()
   const { syncing, lastSyncAt } = useNostrStore()
+  const refreshSync = useNostrStore(s => s.refreshSync)
 
   const branches = useLiveQuery(() =>
     pubkey ? db.branches.where('ownerPubkey').equals(pubkey).count() : 0, [pubkey])
@@ -68,7 +69,7 @@ export default function OwnerDashboard() {
             <Button
               size="small"
               startIcon={<RefreshIcon />}
-              onClick={() => window.location.reload()} // Simple reload to re-trigger hydration
+              onClick={refreshSync}
               sx={{ ml: 1, fontSize: '0.7rem', py: 0.5, px: 1 }}
             >
               Sync

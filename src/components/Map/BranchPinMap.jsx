@@ -71,6 +71,6 @@ export default function BranchPinMap({ lat, lng, onLocationChange, height = 220 
   }, [lat, lng])
 
   return (
-    <Box ref={mapRef} sx={{ width: '100%', height, borderRadius: 2, overflow: 'hidden', border: '1px solid #2A2A2A' }} />
+    <Box ref={mapRef} sx={{ width: '100%', height, borderRadius: 1, overflow: 'hidden', border: '1px solid #2A2A2A' }} />
   )
 }

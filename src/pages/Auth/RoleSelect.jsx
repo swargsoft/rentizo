@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import TwoWheelerIcon from '@mui/icons-material/TwoWheeler'
 import StorefrontIcon from '@mui/icons-material/Storefront'
 import SwapHorizIcon  from '@mui/icons-material/SwapHoriz'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import useAuthStore from '@/store/authStore.js'
 
 const ROLES = [
@@ -74,9 +75,7 @@ export default function RoleSelect() {
                     </Typography>
                   </Box>
                   {isSelected && (
-                    <Box sx={{ ml: 'auto', width: 20, height: 20, borderRadius: '50%', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Typography sx={{ color: '#fff', fontSize: 11, fontWeight: 900 }}>✓</Typography>
-                    </Box>
+                    <CheckCircleRoundedIcon color='primary' />   
                   )}
                 </Stack>
               </CardActionArea>

@@ -6,7 +6,7 @@ import TwoWheelerIcon from "@mui/icons-material/TwoWheeler";
 
 export default function Landing() {
   const navigate = useNavigate();
-  const { pubkey, sessionUnlocked, role } = useAuthStore();
+  const { pubkey, sessionUnlocked, role, getStoredIdentities } = useAuthStore();
   const baseUrl = import.meta.env.BASE_URL;
 
   useEffect(() => {
@@ -14,10 +14,22 @@ export default function Landing() {
       navigate(role === "owner" ? "/owner" : "/rider/discover", {
         replace: true,
       });
-    } else if (pubkey && !sessionUnlocked) {
-      navigate("/unlock", { replace: true });
+      return
     }
-  }, [pubkey, sessionUnlocked, role]);
+    if (pubkey && !sessionUnlocked) {
+      navigate("/unlock", { replace: true });
+      return
+    }
+
+    let active = true
+    getStoredIdentities().then(ids => {
+      if (!active) return
+      if (!pubkey && ids?.length) {
+        navigate('/unlock', { replace: true })
+      }
+    })
+    return () => { active = false }
+  }, [pubkey, sessionUnlocked, role, getStoredIdentities, navigate]);
 
   return (
     <Box
