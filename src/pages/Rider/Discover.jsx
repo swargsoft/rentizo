@@ -21,28 +21,35 @@ export default function RiderDiscover() {
   const navigate = useNavigate()
   const { location, loading: locLoading } = useGeolocation()
   const { branches, loading: branchLoading } = useNearbyBranches(location, DEFAULT_RADIUS)
-  const [view,           setView]           = useState('map')
+  const [view,           setView]           = useState('list')
   const [selectedBranch, setSelectedBranch] = useState(null)
   const [search,         setSearch]         = useState('')
 
-  const listingCounts = useLiveQuery(async () => {
-    if (!branches?.length) return {}
-    const counts = {}
-    for (const b of branches) {
-      counts[b.id] = await db.listings.where('branchId').equals(b.id).filter(l => l.isPublished).count()
-    }
-    return counts
-  }, [branches])
+  // Replace the two problematic useLiveQuery calls:
 
-  const reviewAverages = useLiveQuery(async () => {
-    if (!branches?.length) return {}
-    const avgs = {}
-    for (const b of branches) {
-      const reviews = await db.reviews.where('branchId').equals(b.id).toArray()
-      avgs[b.id] = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null
-    }
-    return avgs
-  }, [branches])
+const listingCounts = useLiveQuery(async () => {
+  if (!branches?.length) return {}
+  const counts = {}
+  await Promise.all(branches.map(async b => {
+    counts[b.id] = await db.listings
+      .where('branchId').equals(b.id)
+      .filter(l => l.isPublished)
+      .count()
+  }))
+  return counts
+}, [branches?.map(b => b.id).join(',')])  // ← stable string dep, not array reference
+
+const reviewAverages = useLiveQuery(async () => {
+  if (!branches?.length) return {}
+  const avgs = {}
+  await Promise.all(branches.map(async b => {
+    const reviews = await db.reviews.where('branchId').equals(b.id).toArray()
+    avgs[b.id] = reviews.length
+      ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+      : null
+  }))
+  return avgs
+}, [branches?.map(b => b.id).join(',')])  // ← same stable dep
 
   const filtered = (branches ?? []).filter(b =>
     !search || b.branchName.toLowerCase().includes(search.toLowerCase()) || b.address.toLowerCase().includes(search.toLowerCase())

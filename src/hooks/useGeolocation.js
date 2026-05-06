@@ -18,7 +18,7 @@ export function useGeolocation() {
       if (cancelled) return
       if (pos) {
         setLocation(pos)
-        setSetting('lastLocation', pos)
+       setSetting('lastLocation', pos).catch(() => {})
       } else {
         setError('Location unavailable')
         if (!cached) setLocation(DEFAULT_LOCATION)

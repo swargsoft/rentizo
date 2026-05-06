@@ -16,10 +16,18 @@ db.version(1).stores({
 })
 
 export async function upsertByTimestamp(table, record, tsField = 'updatedAt') {
-  const key = record.id ?? record.pubkey
-  const existing = await db[table].get(key)
-  if (existing && existing[tsField] >= record[tsField]) return
-  await db[table].put(record)
+  try {
+    const key = record.id ?? record.pubkey
+    const existing = await db[table].get(key)
+    if (existing && existing[tsField] >= record[tsField]) return
+    await db[table].put(record)
+  } catch (err) {
+    if (err.name === 'AbortError' || err.message?.includes('QuotaExceeded')) {
+      console.warn(`[DB] Quota exceeded writing to ${table} — skipping`)
+      return // don't throw — let caller continue
+    }
+    throw err
+  }
 }
 
 export const getListingsByBranch  = (branchId)    => db.listings.where('branchId').equals(branchId).toArray()

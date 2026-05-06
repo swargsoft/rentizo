@@ -244,10 +244,11 @@ export default function Settings() {
           {/* Relays */}
           <Box>
             <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
+              direction={{xs : "column", md : "row"}}
+              alignItems={{xs : "flex-start", md : "center"}}
+              justifyContent={{xs : "flex-start", md : "space-between"}}
               sx={{ mb: 1.5 }}
+              spacing={1}
             >
               <Box>
                 <Typography variant="subtitle1">Nostr Relays</Typography>
@@ -280,7 +281,7 @@ export default function Settings() {
                   }}
                   sx={{ borderColor: "#333", color: "text.secondary" }}
                 >
-                  Reset to Defaults
+                  Reset
                 </Button>
                 <Button
                   startIcon={<EditIcon />}
