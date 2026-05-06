@@ -5,15 +5,19 @@ import { KIND, D_TAG, E_TAG, P_TAG, T_TAG, APP_TAG } from './eventKinds.js'
 
 function now() { return Math.floor(Date.now() / 1000) }
 
-async function buildAndPublish(kind, content, tags, secretKey) {
+async function buildAndPublishWithTs(kind, content, tags, secretKey, ts) {
   const event = finalizeEvent({
     kind,
-    created_at: now(),
+    created_at: ts,
     tags: [...tags, APP_TAG],
     content,
   }, secretKey)
   await publishToRelays(event)
   return event
+}
+
+async function buildAndPublish(kind, content, tags, secretKey) {
+  return buildAndPublishWithTs(kind, content, tags, secretKey, now())
 }
 
 export function generateKeypair() {
@@ -26,30 +30,35 @@ export async function publishMetadata({ name, picture }, secretKey) {
   return buildAndPublish(KIND.METADATA, JSON.stringify({ name, picture: picture ?? '' }), [], secretKey)
 }
 
-export async function publishOwnerProfile({ name, phone, upiId, profilePicture }, secretKey) {
+export async function publishOwnerProfile({ name, phone, upiId, profilePicture, updatedAt }, secretKey) {
   const pubkey = getPublicKey(secretKey)
-  await publishMetadata({ name, picture: profilePicture }, secretKey)
-  return buildAndPublish(
+  const ts = updatedAt ?? now()
+  await buildAndPublishWithTs(KIND.METADATA, JSON.stringify({ name, picture: profilePicture ?? '' }), [], secretKey, ts)
+  return buildAndPublishWithTs(
     KIND.OWNER_PROFILE,
-    JSON.stringify({ name, phone, upiId, profilePicture: profilePicture ?? '' }),
+    JSON.stringify({ name, phone, upiId, profilePicture: profilePicture ?? '', updatedAt: ts }),
     [[D_TAG, pubkey]],
-    secretKey
+    secretKey,
+    ts
   )
 }
 
-export async function publishRiderProfile({ name, phone, profilePicture }, secretKey) {
+export async function publishRiderProfile({ name, phone, profilePicture, updatedAt }, secretKey) {
   const pubkey = getPublicKey(secretKey)
-  await publishMetadata({ name, picture: profilePicture }, secretKey)
-  return buildAndPublish(
+  const ts = updatedAt ?? now()
+  await buildAndPublishWithTs(KIND.METADATA, JSON.stringify({ name, picture: profilePicture ?? '' }), [], secretKey, ts)
+  return buildAndPublishWithTs(
     KIND.RIDER_PROFILE,
-    JSON.stringify({ name, phone, profilePicture: profilePicture ?? '' }),
+    JSON.stringify({ name, phone, profilePicture: profilePicture ?? '', updatedAt: ts }),
     [[D_TAG, pubkey]],
-    secretKey
+    secretKey,
+    ts
   )
 }
 
 export async function publishBranch(branch, secretKey) {
-  return buildAndPublish(
+  const ts = branch.updatedAt ?? now()
+  return buildAndPublishWithTs(
     KIND.BRANCH,
     JSON.stringify({
       branchName: branch.branchName,
@@ -58,7 +67,7 @@ export async function publishBranch(branch, secretKey) {
       lng:        branch.lng,
       phone:      branch.phone ?? '',
       isActive:   branch.isActive ?? true,
-      updatedAt:  now(),
+      updatedAt:  ts,
     }),
     [
       [D_TAG, branch.id],
@@ -66,12 +75,14 @@ export async function publishBranch(branch, secretKey) {
       ['lon', String(branch.lng)],
       [T_TAG, 'rentizo-branch'],
     ],
-    secretKey
+    secretKey,
+    ts
   )
 }
 
 export async function publishListing(listing, secretKey) {
-  return buildAndPublish(
+  const ts = listing.updatedAt ?? now()
+  return buildAndPublishWithTs(
     KIND.LISTING,
     JSON.stringify({
       vehicleName:    listing.vehicleName,
@@ -84,7 +95,7 @@ export async function publishListing(listing, secretKey) {
       description:    listing.description ?? '',
       isPublished:    listing.isPublished ?? false,
       branchId:       listing.branchId,
-      updatedAt:      now(),
+      updatedAt:      ts,
     }),
     [
       [D_TAG, listing.id],
@@ -93,7 +104,8 @@ export async function publishListing(listing, secretKey) {
       [T_TAG, 'rentizo-listing'],
       ['price', String(listing.pricePerDay), 'INR'],
     ],
-    secretKey
+    secretKey,
+    ts
   )
 }
 

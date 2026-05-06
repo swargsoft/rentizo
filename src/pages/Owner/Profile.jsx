@@ -58,9 +58,9 @@ export default function OwnerProfile() {
         await storeProfileImage(pubkey, avatarBlob)
         profilePicture = await blobToBase64(avatarBlob)
       }
-      const data = { name: name.trim(), phone: formatPhone(phone), upiId: upiId.trim(), profilePicture }
+      const data = { name: name.trim(), phone: formatPhone(phone), upiId: upiId.trim(), profilePicture, updatedAt: Math.floor(Date.now() / 1000)  }
       await publishOwnerProfile(data, secretKey)
-      await db.ownerProfiles.put({ pubkey, ...data, updatedAt: Math.floor(Date.now()/1000) })
+      await db.ownerProfiles.put({ pubkey, ...data})
       showSnackbar('Profile saved!', 'success')
     } catch (err) {
       showSnackbar('Failed to save: ' + err.message, 'error')

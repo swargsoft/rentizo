@@ -1,12 +1,9 @@
 import { SimplePool } from 'nostr-tools/pool'
 
-export const DEFAULT_RELAYS = [
-  import.meta.env.VITE_DEFAULT_RELAY_1,
-  import.meta.env.VITE_DEFAULT_RELAY_2,
-  import.meta.env.VITE_DEFAULT_RELAY_3,
-  import.meta.env.VITE_DEFAULT_RELAY_4,
-  import.meta.env.VITE_DEFAULT_RELAY_5,
-].filter(Boolean)
+export const DEFAULT_RELAYS = (import.meta.env.VITE_DEFAULT_RELAYS ?? '')
+  .split(',')
+  .map(r => r.trim())
+  .filter(r => r.startsWith('wss://'))
 
 let _pool = null
 let _relays = [...DEFAULT_RELAYS]
@@ -16,9 +13,7 @@ export function getPool() {
   return _pool
 }
 
-export function getRelays() {
-  return _relays
-}
+export function getRelays() { return _relays }
 
 export function setRelays(relays) {
   if (!Array.isArray(relays) || !relays.length) return
@@ -26,29 +21,38 @@ export function setRelays(relays) {
 }
 
 export function closePool() {
-  if (_pool) {
-    _pool.close(_relays)
-    _pool = null
-  }
+  if (_pool) { _pool.close(_relays); _pool = null }
 }
 
 export async function publishToRelays(signedEvent) {
   const pool = getPool()
-  const results = await Promise.allSettled(
-    pool.publish(_relays, signedEvent)
-  )
+  const results = await Promise.allSettled(pool.publish(_relays, signedEvent))
   const ok = results.filter(r => r.status === 'fulfilled').length
+  console.log(`[Publish] kind:${signedEvent.kind} → ${ok}/${_relays.length} relays`)
   if (ok === 0) throw new Error('Failed to publish to any relay')
   return ok
 }
 
-export async function queryRelays(filters, timeoutMs = 6000) {
+export async function queryRelays(filters, timeoutMs = 10000) {
   const pool = getPool()
   const filterArray = Array.isArray(filters) ? filters : [filters]
+  const activeRelays = [..._relays]
+
   return new Promise((resolve) => {
     const events = []
     const seen = new Set()
-    const sub = pool.subscribeMany(_relays, filterArray, {
+    let settled = false
+    let eoseCount = 0
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try { sub.close() } catch {}
+      resolve(events.sort((a, b) => b.created_at - a.created_at))
+    }
+
+    const sub = pool.subscribeMany(activeRelays, filterArray, {
       onevent(event) {
         if (!seen.has(event.id)) {
           seen.add(event.id)
@@ -56,15 +60,16 @@ export async function queryRelays(filters, timeoutMs = 6000) {
         }
       },
       oneose() {
-        clearTimeout(timer)
-        sub.close()
-        resolve(events.sort((a, b) => b.created_at - a.created_at))
+        // In nostr-tools v2, oneose fires per relay
+        // Wait for ALL relays to EOSE before resolving
+        eoseCount++
+        if (eoseCount >= activeRelays.length) {
+          finish()
+        }
       }
     })
-    const timer = setTimeout(() => {
-      sub.close()
-      resolve(events.sort((a, b) => b.created_at - a.created_at))
-    }, timeoutMs)
+
+    const timer = setTimeout(finish, timeoutMs)
   })
 }
 
@@ -72,7 +77,7 @@ export function subscribeToRelays(filters, onEvent, onEose) {
   const pool = getPool()
   const filterArray = Array.isArray(filters) ? filters : [filters]
   const seen = new Set()
-  const sub = pool.subscribeMany(_relays, filterArray, {
+  const sub = pool.subscribeMany([..._relays], filterArray, {
     onevent(event) {
       if (!seen.has(event.id)) {
         seen.add(event.id)
@@ -85,6 +90,6 @@ export function subscribeToRelays(filters, onEvent, onEose) {
 }
 
 export async function fetchEventById(eventId) {
-  const events = await queryRelays({ ids: [eventId] }, 4000)
+  const events = await queryRelays({ ids: [eventId] }, 5000)
   return events[0] ?? null
 }

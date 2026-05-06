@@ -59,7 +59,7 @@ export default function OwnerDashboard() {
         {/* Sync status */}
         <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 2 }}>
           {syncing
-            ? <SyncIcon sx={{ fontSize: 14, color: 'warning.main', animation: 'spin 1s linear infinite', '@keyframes spin': { to: { transform: 'rotate(360deg)' } } }} />
+            ? <SyncIcon sx={{ fontSize: 14, color: 'warning.main', animation: 'spin 1s linear infinite', '@keyframes spin': { to: { transform: 'rotate(-360deg)' } } }} />
             : <CheckCircleIcon sx={{ fontSize: 14, color: 'success.main' }} />
           }
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -68,6 +68,7 @@ export default function OwnerDashboard() {
           {!syncing && (
             <Button
               size="small"
+              variant='text'
               startIcon={<RefreshIcon />}
               onClick={refreshSync}
               sx={{ ml: 1, fontSize: '0.7rem', py: 0.5, px: 1 }}

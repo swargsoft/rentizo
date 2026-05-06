@@ -35,8 +35,8 @@ function PinPad({ onPress }) {
       {keys.map((k, i) => (
         k === '' ? <Box key={`empty-${i}`} /> :
         <Button key={`key-${i}`} variant="outlined" onClick={() => onPress(k)} sx={{
-          height: 64, fontSize: k === '⌫' ? '1.4rem' : '1.5rem', fontWeight: 700,
-          borderColor: '#2A2A2A', color: 'text.primary', bgcolor: '#141414', borderRadius: 2,
+          height: 70, fontSize: k === '⌫' ? '1.4rem' : '1.5rem', fontWeight: 700,
+          borderColor: '#2A2A2A', color: 'text.primary', bgcolor: '#141414', borderRadius: 10,
           '&:active': { bgcolor: 'rgba(255,87,34,0.15)', borderColor: 'primary.main' },
         }}>
           {k}

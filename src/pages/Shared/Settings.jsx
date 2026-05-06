@@ -22,7 +22,7 @@ export default function Settings() {
   const showSnackbar = useUiStore(s => s.showSnackbar)
   const showConfirm  = useUiStore(s => s.showConfirm)
   const [currentRelays, setCurrentRelays] = useState(DEFAULT_RELAYS)
-  const [relayInput, setRelayInput] = useState(DEFAULT_RELAYS.join('\n'))
+  const [relayInput, setRelayInput] = useState(DEFAULT_RELAYS.join(','))
   const [showNsec,   setShowNsec]   = useState(false)
   const [editOpen,   setEditOpen]   = useState(false)
   const [probing,    setProbing]    = useState(false)
@@ -31,7 +31,7 @@ export default function Settings() {
     getSetting('relays').then(saved => { 
       if (saved?.length) {
         setCurrentRelays(saved)
-        setRelayInput(saved.join('\n'))
+        setRelayInput(saved.join(','))
       }
     })
     // Load cached relay health
@@ -58,7 +58,7 @@ export default function Settings() {
   }
 
   async function handleSaveRelays() {
-    const relays = relayInput.split('\n').map(r => r.trim()).filter(r => r.startsWith('wss://'))
+    const relays = relayInput.split(',').map(r => r.trim()).filter(r => r.startsWith('wss://'))
     if (!relays.length) { showSnackbar('Enter at least one valid wss:// relay', 'error'); return }
     await setSetting('relays', relays)
     setRelays(relays)
@@ -200,6 +200,28 @@ const getRelayDisplay = (relay) => {
                 </TableBody>
               </Table>
             </TableContainer>
+            {/* Active relays being used */}
+            {(() => {
+              const online = currentRelays
+                .filter(r => relayHealth[r]?.ok)
+                .sort((a, b) => (relayHealth[a]?.latencyMs ?? Infinity) - (relayHealth[b]?.latencyMs ?? Infinity))
+                .slice(0, 3)
+
+              if (!online.length) return null
+
+              return (
+                <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'rgba(105,240,174,0.06)', borderRadius: 1, border: '1px solid rgba(105,240,174,0.15)' }}>
+                  <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 700, display: 'block', mb: 0.75 }}>
+                    ⚡ Top 3 Active Relays
+                  </Typography>
+                  {online.map(r => (
+                    <Typography key={r} variant="caption" sx={{ display: 'block', fontFamily: 'monospace', color: 'text.secondary', fontSize: '0.7rem' }}>
+                      {r} — {relayHealth[r]?.latencyMs}ms
+                    </Typography>
+                  ))}
+                </Box>
+              )
+            })()}
           </Box>
 
           <Divider />
@@ -217,7 +239,7 @@ const getRelayDisplay = (relay) => {
           <Stack spacing={2}>
             <Box>
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
-                One relay URL per line (wss://…)
+                One relay URL per line Comma-separated (wss://…)
               </Typography>
               <TextField
                 fullWidth
@@ -225,7 +247,9 @@ const getRelayDisplay = (relay) => {
                 rows={6}
                 value={relayInput}
                 onChange={e => setRelayInput(e.target.value)}
-                inputProps={{ style: { fontFamily: 'monospace', fontSize: '0.75rem' } }}
+                placeholder={`wss://relay.damus.io,
+                              wss://relay.nostr.band`}
+                inputProps={{ style: { fontFamily: 'monospace', fontSize: '0.8rem' } }}
               />
             </Box>
             <Box sx={{ p: 1.5, bgcolor: '#1E1E1E', borderRadius: 1, border: '1px solid #2A2A2A' }}>

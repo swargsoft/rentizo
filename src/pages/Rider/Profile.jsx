@@ -52,9 +52,9 @@ export default function RiderProfile() {
         await storeProfileImage(pubkey, avatarBlob)
         profilePicture = await blobToBase64(avatarBlob)
       }
-      const data = { name: name.trim(), phone: formatPhone(phone), profilePicture }
+      const data = { name: name.trim(), phone: formatPhone(phone), profilePicture, updatedAt: Math.floor(Date.now()/1000) }
       await publishRiderProfile(data, secretKey)
-      await db.riderProfiles.put({ pubkey, ...data, updatedAt: Math.floor(Date.now()/1000) })
+      await db.riderProfiles.put({ pubkey, ...data })
       showSnackbar('Profile saved!', 'success')
     } catch (err) {
       showSnackbar('Error: ' + err.message, 'error')

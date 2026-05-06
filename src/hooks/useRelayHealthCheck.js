@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { probeRelays } from '@/nostr/relayHealth.js'
+import { probeRelays, getTopRelays } from '@/nostr/relayHealth.js'
+import { setRelays } from '@/nostr/client.js'
 import useNostrStore from '@/store/nostrStore.js'
 
 /**
@@ -14,6 +15,11 @@ export function useRelayHealthCheck(relays, intervalMs = 5 * 60 * 1000) {
     async function probe() {
       const results = await probeRelays(relays)
       setRelayHealthBatch(results)
+
+      // Dynamically switch to the top 3 fastest relays
+      const top = getTopRelays(results, 3)
+      setRelays(top)
+      console.log('[Relays] Active top 3:', top)
     }
 
     probe()
