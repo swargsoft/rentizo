@@ -82,6 +82,12 @@ export async function publishBranch(branch, secretKey) {
 
 export async function publishListing(listing, secretKey) {
   const ts = listing.updatedAt ?? now()
+  const images = listing.images ?? []
+  const contentWithImages = JSON.stringify({ ...listing, images })
+  const finalImages = contentWithImages.length > 60000 ? [] : images
+  if (finalImages.length === 0 && images.length > 0) {
+    console.warn('[publish] Listing images stripped — content too large for relays')
+  }
   return buildAndPublishWithTs(
     KIND.LISTING,
     JSON.stringify({
@@ -99,10 +105,10 @@ export async function publishListing(listing, secretKey) {
     }),
     [
       [D_TAG, listing.id],
-      [E_TAG, listing.branchId],
       [T_TAG, listing.vehicleType],
       [T_TAG, 'rentizo-listing'],
       ['price', String(listing.pricePerDay), 'INR'],
+      // branchId stored in content JSON — not as e tag (nanoid ≠ hex event id)
     ],
     secretKey,
     ts

@@ -4,7 +4,7 @@ import { nip19 } from 'nostr-tools'
 import db from '@/db/index.js'
 import { encryptPrivateKey, decryptPrivateKey } from '@/utils/keyEncryption.js'
 import { generateKeypair } from '@/nostr/publish.js'
-import { setRelays } from '@/nostr/client.js'
+import { setRelays, DEFAULT_RELAYS   } from '@/nostr/client.js'
 import { getSetting } from '@/db/index.js'
 
 const useAuthStore = create((set, get) => ({
@@ -55,12 +55,20 @@ const useAuthStore = create((set, get) => ({
     try {
       const identity = await db.identities.get(pubkey)
       if (!identity) throw new Error('Identity not found')
+
       const secretKey = await decryptPrivateKey(
         { encryptedKey: identity.encryptedKey, salt: identity.salt, iv: identity.iv },
         pin
       )
-      const customRelays = await getSetting('relays')
-      if (customRelays?.length) setRelays(customRelays)
+
+      // Load user's saved relays, fall back to defaults
+      const savedRelays = await getSetting('relays')
+      if (savedRelays?.length) {
+        setRelays(savedRelays)
+      } else {
+        setRelays(DEFAULT_RELAYS)
+      }
+
       set({ pubkey, secretKey, role: identity.role, sessionUnlocked: true, loading: false, error: null })
       return identity.role
     } catch (err) {
