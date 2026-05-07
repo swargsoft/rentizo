@@ -31,10 +31,8 @@ import AppLayout from "@/components/Common/AppLayout.jsx";
 import useAuthStore from "@/store/authStore.js";
 import useNostrStore from "@/store/nostrStore.js";
 import useUiStore from "@/store/uiStore.js";
-import { useRelayHealthCheck } from "@/hooks/useRelayHealthCheck.js";
 import { getSetting, setSetting } from "@/db/index.js";
-import { setRelays, DEFAULT_RELAYS } from "@/nostr/client.js";
-import { probeRelays, getCachedRelayHealth } from "@/nostr/relayHealth.js";
+import { setRelays, DEFAULT_RELAYS,connectRelays } from "@/nostr/client.js";
 import { pubkeyToNpub, secretKeyToNsec } from "@/utils/nostrValidation.js";
 import { secretKeyToHex } from "@/utils/keyEncryption.js";
 
@@ -44,63 +42,72 @@ export default function Settings() {
   const { relayHealth, setRelayHealthBatch } = useNostrStore();
   const showSnackbar = useUiStore((s) => s.showSnackbar);
   const showConfirm = useUiStore((s) => s.showConfirm);
+  const relayStatuses  = useNostrStore(s => s.relayStatuses)
+  const liveRelayCount = useNostrStore(s => s.liveRelayCount)
   const [currentRelays, setCurrentRelays] = useState(DEFAULT_RELAYS);
   const [relayInput, setRelayInput] = useState(DEFAULT_RELAYS.join(","));
   const [showNsec, setShowNsec] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [probing, setProbing] = useState(false);
+  const [reconnecting,  setReconnecting]  = useState(false)
+
 
   useEffect(() => {
-    getSetting("relays").then((saved) => {
+    getSetting('relays').then(saved => {
       if (saved?.length) {
-        setCurrentRelays(saved);
-        setRelayInput(saved.join(","));
+        setCurrentRelays(saved)
+        setRelayInput(saved.join('\n'))
       }
-    });
-    // Load cached relay health
-    const cached = getCachedRelayHealth();
-    if (cached?.length) {
-      setRelayHealthBatch(cached);
-    }
-  }, []);
+    })
+  }, [])
 
-  // Automatically probe relay health every 5 minutes
-  useRelayHealthCheck(currentRelays, 5 * 60 * 1000);
-
-  async function handleProbeRelays() {
-    setProbing(true);
+   async function handleReconnect() {
+    setReconnecting(true)
     try {
-      const results = await probeRelays(currentRelays);
-      setRelayHealthBatch(results);
-      showSnackbar("Relay health checked", "success");
-    } catch (err) {
-      showSnackbar("Failed to probe relays", "error");
+      await connectRelays(currentRelays)
+      showSnackbar('Relay connections refreshed', 'success')
+    } catch {
+      showSnackbar('Some relays failed to connect', 'warning')
     } finally {
-      setProbing(false);
+      setReconnecting(false)
     }
   }
 
   async function handleSaveRelays() {
     const relays = relayInput
-      .split(",")
-      .map((r) => r.trim())
-      .filter((r) => r.startsWith("wss://"));
+      .split(/[\n,]+/)
+      .map(r => r.trim())
+      .filter(r => r.startsWith('wss://'))
+
     if (!relays.length) {
-      showSnackbar("Enter at least one valid wss:// relay", "error");
-      return;
+      showSnackbar('Enter at least one valid wss:// relay', 'error')
+      return
     }
-    await setSetting("relays", relays);
-    setRelays(relays);
-    setCurrentRelays(relays);
-    setEditOpen(false);
-    showSnackbar("Relays updated", "success");
-    // Probe new relays
-    setProbing(true);
+    await setSetting('relays', relays)
+    setRelays(relays)
+    setCurrentRelays(relays)
+    setEditOpen(false)
+    showSnackbar('Relays saved — reconnecting…', 'info')
+    setReconnecting(true)
     try {
-      const results = await probeRelays(relays);
-      setRelayHealthBatch(results);
+      await connectRelays(relays)
+      showSnackbar('Connected!', 'success')
     } finally {
-      setProbing(false);
+      setReconnecting(false)
+    }
+  }
+
+  async function handleReset() {
+    await setSetting('relays', null)
+    setRelayInput(DEFAULT_RELAYS.join('\n'))
+    setCurrentRelays(DEFAULT_RELAYS)
+    setRelays(DEFAULT_RELAYS)
+    showSnackbar('Relays reset — reconnecting…', 'info')
+    setReconnecting(true)
+    try {
+      await connectRelays(DEFAULT_RELAYS)
+      showSnackbar('Connected!', 'success')
+    } finally {
+      setReconnecting(false)
     }
   }
 
@@ -119,31 +126,11 @@ export default function Settings() {
   const connectedCount = currentRelays.filter((r) => relayHealth[r]?.ok).length;
 
   const getRelayDisplay = (relay) => {
-    const health = relayHealth[relay];
-    if (!health)
-      return {
-        label: "Probing…",
-        color: "warning.main",
-        bg: "rgba(255,193,7,0.15)",
-      };
-    if (!health.ok)
-      return {
-        label: "Offline",
-        color: "error.main",
-        bg: "rgba(244,67,54,0.15)",
-      };
-    if (health.latencyMs > 2000)
-      return {
-        label: `${health.latencyMs}ms`,
-        color: "warning.main",
-        bg: "rgba(255,193,7,0.15)",
-      };
-    return {
-      label: "Connected",
-      color: "success.main",
-      bg: "rgba(105,240,174,0.15)",
-    };
-  };
+    const status = relayStatuses[relay]
+    if (!status || status === 'connecting') return { label: 'Connecting…', color: 'warning.main', bg: 'rgba(255,193,7,0.15)' }
+    if (status === 'error')                 return { label: 'Offline',      color: 'error.main',   bg: 'rgba(244,67,54,0.15)' }
+    return                                         { label: 'Connected',    color: 'success.main', bg: 'rgba(105,240,174,0.15)' }
+  }
 
   return (
     <AppLayout title="Settings" showBack>
@@ -252,33 +239,25 @@ export default function Settings() {
             >
               <Box>
                 <Typography variant="subtitle1">Nostr Relays</Typography>
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  {connectedCount} of {currentRelays.length} connected
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  {liveRelayCount} of {currentRelays.length} connected
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1}>
                 <Button
-                  startIcon={
-                    probing ? <CircularProgress size={16} /> : <RefreshIcon />
-                  }
+                  startIcon={reconnecting ? <CircularProgress size={16} /> : <RefreshIcon />}
                   variant="outlined"
                   size="small"
-                  onClick={handleProbeRelays}
-                  disabled={probing}
-                  sx={{ borderColor: "#333" }}
+                  onClick={handleReconnect}
+                  disabled={reconnecting}
+                  sx={{ borderColor: '#333' }}
                 >
-                  {probing ? "Checking..." : "Check"}
+                  {reconnecting ? 'Connecting' : 'Reconnect'}
                 </Button>
                 <Button
                   variant="outlined"
                   size="small"
-                  onClick={async () => {
-                    await setSetting("relays", null);
-                    setRelayInput(DEFAULT_RELAYS.join(","));
-                    setCurrentRelays(DEFAULT_RELAYS);
-                    setRelays(DEFAULT_RELAYS);
-                    showSnackbar("Relays reset to defaults", "success");
-                  }}
+                  onClick={handleReset}
                   sx={{ borderColor: "#333", color: "text.secondary" }}
                 >
                   Reset
@@ -363,7 +342,7 @@ export default function Settings() {
               </Table>
             </TableContainer>
             {/* Active relays being used */}
-            {(() => {
+            {/* {(() => {
               const online = currentRelays
                 .filter((r) => relayHealth[r]?.ok)
                 .sort(
@@ -412,6 +391,22 @@ export default function Settings() {
                   ))}
                 </Box>
               );
+            })()} */}
+            {(() => {
+              const online = currentRelays.filter(r => relayStatuses[r] === 'connected').slice(0, 3)
+              if (!online.length) return null
+              return (
+                <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'rgba(105,240,174,0.06)', borderRadius: 2, border: '1px solid rgba(105,240,174,0.15)' }}>
+                  <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 700, display: 'block', mb: 0.75 }}>
+                    ⚡ Top 3 Active Relays
+                  </Typography>
+                  {online.map(r => (
+                    <Typography key={r} variant="caption" sx={{ display: 'block', fontFamily: 'monospace', color: 'text.secondary', fontSize: '0.7rem' }}>
+                      {r}
+                    </Typography>
+                  ))}
+                </Box>
+              )
             })()}
           </Box>
 
@@ -451,8 +446,7 @@ export default function Settings() {
                 rows={6}
                 value={relayInput}
                 onChange={(e) => setRelayInput(e.target.value)}
-                placeholder={`wss://relay.damus.io,
-                              wss://relay.nostr.band`}
+                placeholder={`wss://relay.damus.io,wss://relay.nostr.band`}
                 inputProps={{
                   style: { fontFamily: "monospace", fontSize: "0.8rem" },
                 }}

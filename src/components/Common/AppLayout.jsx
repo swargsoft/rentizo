@@ -1,8 +1,12 @@
 import { Box, BottomNavigation, BottomNavigationAction, AppBar, Toolbar, Typography, IconButton, Badge } from '@mui/material'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useMemo,useEffect, useState } from 'react'
 import useAuthStore from '@/store/authStore.js'
 import useCartStore from '@/store/cartStore.js'
+import { getRelayStatuses, getLiveRelayCount, onRelayStatusChange } from '@/nostr/client.js'
+import CloudDoneIcon from '@mui/icons-material/CloudDone'
+import CloudOffIcon  from '@mui/icons-material/CloudOff'
+import { Tooltip } from '@mui/material'
 
 // Owner nav icons
 import DashboardIcon      from '@mui/icons-material/Dashboard'
@@ -30,6 +34,34 @@ const RIDER_TABS = [
   { label: 'Bookings', icon: <ReceiptLongIcon />,   path: '/rider/bookings' },
   { label: 'Profile',  icon: <PersonIcon />,        path: '/rider/profile' },
 ]
+
+function RelayStatusDot() {
+  const [liveCount, setLiveCount] = useState(getLiveRelayCount())
+  const [statuses, setStatuses]   = useState(getRelayStatuses())
+
+  useEffect(() => {
+    return onRelayStatusChange(() => {
+      setLiveCount(getLiveRelayCount())
+      setStatuses(getRelayStatuses())
+    })
+  }, [])
+
+  const isOnline = liveCount > 0
+  const tooltipText = Object.entries(statuses)
+    .map(([url, s]) => `${s === 'connected' ? '✅' : s === 'connecting' ? '⏳' : '❌'} ${url}`)
+    .join('\n') || 'No relays configured'
+
+  return (
+    <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{tooltipText}</span>}>
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        {isOnline
+          ? <CloudDoneIcon sx={{ fontSize: 16, color: 'success.main' }} />
+          : <CloudOffIcon  sx={{ fontSize: 16, color: 'text.disabled' }} />
+        }
+      </Box>
+    </Tooltip>
+  )
+}
 
 export default function AppLayout({ children, title, showBack = false }) {
   const navigate  = useNavigate()
@@ -62,6 +94,7 @@ export default function AppLayout({ children, title, showBack = false }) {
           <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 800, color: 'primary.main', letterSpacing: '-0.5px' }}>
             {title || 'Rentizo'}
           </Typography>
+          <RelayStatusDot />
           <IconButton onClick={() => navigate('/settings')} sx={{ color: 'text.secondary' }}>
             <SettingsIcon fontSize="small" />
           </IconButton>

@@ -1,13 +1,17 @@
 import { create } from 'zustand'
+import { onRelayStatusChange, getRelayStatuses, getLiveRelayCount } from '@/nostr/client.js'
 
 const useNostrStore = create((set, get) => ({
   hydrated:      false,
   syncing:       false,
-  relayStatuses: {},
   relayHealth:   {},
   subscriptions: [],
   lastSyncAt:    null,
-  syncTrigger:   0,   // increment to force re-sync
+  syncTrigger:   0,
+
+  // Live relay connection state — updated by client.js listeners
+  relayStatuses:  {},
+  liveRelayCount: 0,
 
   setHydrated:   (v)  => set({ hydrated: v }),
   setSyncing:    (v)  => set({ syncing: v }),
@@ -17,8 +21,18 @@ const useNostrStore = create((set, get) => ({
     set(s => ({ syncTrigger: s.syncTrigger + 1, hydrated: false }))
   },
 
-  updateRelayStatus(relay, status) {
-    set(s => ({ relayStatuses: { ...s.relayStatuses, [relay]: status } }))
+  /**
+   * Start listening to relay connection changes from client.js.
+   * Call once on app mount — same as worknotes useSyncStore.init().
+   */
+  initRelayListener() {
+    const unsub = onRelayStatusChange(() => {
+      set({
+        relayStatuses:  getRelayStatuses(),
+        liveRelayCount: getLiveRelayCount(),
+      })
+    })
+    return unsub
   },
 
   setRelayHealthBatch(results) {

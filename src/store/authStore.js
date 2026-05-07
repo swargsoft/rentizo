@@ -4,7 +4,7 @@ import { nip19 } from 'nostr-tools'
 import db from '@/db/index.js'
 import { encryptPrivateKey, decryptPrivateKey } from '@/utils/keyEncryption.js'
 import { generateKeypair } from '@/nostr/publish.js'
-import { setRelays, DEFAULT_RELAYS   } from '@/nostr/client.js'
+import { setRelays, DEFAULT_RELAYS, connectRelays } from '@/nostr/client.js'
 import { getSetting } from '@/db/index.js'
 
 const useAuthStore = create((set, get) => ({
@@ -61,13 +61,15 @@ const useAuthStore = create((set, get) => ({
         pin
       )
 
-      // Load user's saved relays, fall back to defaults
+      // Load saved relays, fall back to defaults
       const savedRelays = await getSetting('relays')
-      if (savedRelays?.length) {
-        setRelays(savedRelays)
-      } else {
-        setRelays(DEFAULT_RELAYS)
-      }
+      const relayUrls = savedRelays?.length ? savedRelays : DEFAULT_RELAYS
+
+      // Explicitly connect — same as worknotes connectRelays() on identity load
+      // Don't await — let it connect in background while app loads
+      connectRelays(relayUrls).catch(err =>
+        console.warn('[auth] relay connect error:', err.message)
+      )
 
       set({ pubkey, secretKey, role: identity.role, sessionUnlocked: true, loading: false, error: null })
       return identity.role

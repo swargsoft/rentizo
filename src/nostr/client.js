@@ -1,48 +1,113 @@
 import { Relay } from 'nostr-tools'
 
+// ── State ─────────────────────────────────────────────────────────────────────
+
 export const DEFAULT_RELAYS = (import.meta.env.VITE_DEFAULT_RELAYS ?? '')
   .split(',')
   .map(r => r.trim())
   .filter(r => r.startsWith('wss://'))
 
 let _relays = [...DEFAULT_RELAYS]
+const _status = new Map()        // url → 'connecting' | 'connected' | 'error'
+const _connections = new Map()   // url → Relay instance (live)
+const _listeners = new Set()     // () => void
 
-// Connection cache — reuse open relay connections
-const _connections = new Map() // url → Relay instance
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function notify() {
+  _listeners.forEach(fn => fn())
+}
+
+export function onRelayStatusChange(fn) {
+  _listeners.add(fn)
+  return () => _listeners.delete(fn)
+}
+
+export function getRelayStatuses() {
+  return Object.fromEntries(_status)
+}
+
+export function getLiveRelayCount() {
+  return [..._status.values()].filter(s => s === 'connected').length
+}
 
 export function getRelays() { return _relays }
 
 export function setRelays(relays) {
   if (!Array.isArray(relays) || !relays.length) return
   _relays = relays
-  // Clear stale connections when relay list changes
+  // Clear stale connections — will reconnect on next use
   _connections.clear()
-  console.log('[relay] active relays:', _relays)
+  _status.clear()
+  notify()
+  console.log('[relay] relay list updated:', _relays)
+}
+
+// ── Connect ───────────────────────────────────────────────────────────────────
+
+/**
+ * Explicitly connect to all configured relays.
+ * Call once after login/unlock — same pattern as worknotes connectRelays().
+ * Updates status map so UI can show connection state.
+ */
+export async function connectRelays(relayUrls) {
+  const urls = relayUrls ?? _relays
+  if (!urls?.length) return
+
+  _relays = urls
+  console.log('[relay] connecting to:', urls)
+
+  // Connect all relays in parallel — don't await sequentially
+  await Promise.allSettled(urls.map(async url => {
+    _status.set(url, 'connecting')
+    notify()
+    try {
+      const relay = await Relay.connect(url)
+      _connections.set(url, relay)
+      _status.set(url, 'connected')
+      console.log('[relay] ✅ connected:', url)
+    } catch {
+      _status.set(url, 'error')
+      console.warn('[relay] ❌ failed:', url)
+    }
+    notify()
+  }))
 }
 
 /**
- * Get or create a cached relay connection.
- * Reuses existing open connections instead of reconnecting every time.
+ * Get a cached connection — or create a new one if not cached / dropped.
+ * This is the internal helper used by publish/query.
  */
 async function getRelay(url) {
-  const existing = _connections.get(url)
+  const cached = _connections.get(url)
+  if (cached) return cached
 
-  // Reuse if already connected
-  if (existing) {
-    try {
-      // Check if still alive by reading the internal ws status
-      if (existing.connected) return existing
-    } catch {}
+  // Not in cache — connect fresh
+  try {
+    const relay = await Relay.connect(url)
+    _connections.set(url, relay)
+    _status.set(url, 'connected')
+    notify()
+    return relay
+  } catch (err) {
+    _status.set(url, 'error')
+    notify()
+    throw err
   }
-
-  // Create new connection and cache it
-  const relay = await Relay.connect(url)
-  _connections.set(url, relay)
-  return relay
 }
+
+export async function disconnectAll() {
+  _connections.clear()
+  _status.clear()
+  _relays = [...DEFAULT_RELAYS]
+  notify()
+}
+
+// ── Publish ───────────────────────────────────────────────────────────────────
 
 /**
  * Publish to all relays — reuses cached connections.
+ * Per-relay confirmation — same pattern as worknotes publishEvent().
  */
 export async function publishToRelays(signedEvent) {
   if (!_relays.length) throw new Error('No relays configured')
@@ -57,17 +122,22 @@ export async function publishToRelays(signedEvent) {
   )
 
   const ok  = results.filter(r => r.status === 'fulfilled').length
-  const bad = results.filter(r => r.status === 'rejected').map(r => r.reason?.message ?? String(r.reason))
+  const bad = results.filter(r => r.status === 'rejected')
+    .map(r => r.reason?.message ?? String(r.reason))
 
-  if (bad.length) console.warn(`[publish] ✗ ${bad.length} relays rejected:`, bad)
+  if (bad.length) console.warn(`[publish] ✗ ${bad.length} relays:`, bad)
   console.log(`[publish] kind:${signedEvent.kind} → ${ok}/${_relays.length} confirmed`)
 
   if (ok === 0) throw new Error('Failed to publish to any relay')
   return ok
 }
 
+// ── Fetch ─────────────────────────────────────────────────────────────────────
+
 /**
- * Query relays — reuses cached connections per relay, each resolves on EOSE.
+ * Fetch events from all relays in parallel.
+ * Each relay gets its own connection + EOSE handler — same as worknotes fetchEvents().
+ * Deduplicates by event ID.
  */
 export async function queryRelays(filters, timeoutMs = 10000) {
   if (!_relays.length) return []
@@ -97,20 +167,25 @@ export async function queryRelays(filters, timeoutMs = 10000) {
           })
         })
       } catch (err) {
-        // Connection failed — remove from cache so next call retries
+        // Remove from cache — stale connection
         _connections.delete(url)
+        _status.set(url, 'error')
+        notify()
         console.warn(`[query] failed on ${url}:`, err.message)
       }
     })
   )
 
-  const result = Array.from(events.values()).sort((a, b) => b.created_at - a.created_at)
+  const result = Array.from(events.values())
+    .sort((a, b) => b.created_at - a.created_at)
   console.log(`[query] kinds:${filterArray.map(f => f.kinds).flat()} → ${result.length} events`)
   return result
 }
 
+// ── Subscribe (live) ──────────────────────────────────────────────────────────
+
 /**
- * Live subscription — reuses cached connections.
+ * Subscribe to live events — per-relay, same as worknotes subscribeToNote().
  */
 export function subscribeToRelays(filters, onEvent, onEose) {
   const filterArray = Array.isArray(filters) ? filters : [filters]
@@ -132,6 +207,8 @@ export function subscribeToRelays(filters, onEvent, onEose) {
       unsubs.push(() => sub.close())
     } catch (err) {
       _connections.delete(url)
+      _status.set(url, 'error')
+      notify()
       console.warn(`[subscribe] failed on ${url}:`, err.message)
     }
   })

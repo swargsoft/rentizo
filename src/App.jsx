@@ -8,6 +8,7 @@ import { useIncomingBookings } from '@/hooks/useBookings.js'
 import SnackbarNotifier from '@/components/Common/SnackbarNotifier.jsx'
 import ConfirmDialog    from '@/components/Common/ConfirmDialog.jsx'
 import OfflineBanner    from '@/components/Common/OfflineBanner.jsx'
+import useNostrStore from '@/store/nostrStore.js'
 
 // Auth
 import Landing     from '@/pages/Auth/Landing.jsx'
@@ -40,6 +41,13 @@ import Settings from '@/pages/Shared/Settings.jsx'
 import NotFound from '@/pages/Shared/NotFound.jsx'
 
 function AppInner() {
+  const initRelayListener = useNostrStore(s => s.initRelayListener)
+
+  useEffect(() => {
+    const unsub = initRelayListener()
+    return unsub
+  }, [])
+
   useHydration()
   useOfflineQueue()
   useIncomingBookings()
