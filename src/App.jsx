@@ -8,7 +8,8 @@ import { useIncomingBookings } from '@/hooks/useBookings.js'
 import SnackbarNotifier from '@/components/Common/SnackbarNotifier.jsx'
 import ConfirmDialog    from '@/components/Common/ConfirmDialog.jsx'
 import OfflineBanner    from '@/components/Common/OfflineBanner.jsx'
-import useNostrStore from '@/store/nostrStore.js'
+import useNostrStore    from '@/store/nostrStore.js'
+import { restoreSession } from '@/utils/tokenManager.js'
 
 // Auth
 import Landing     from '@/pages/Auth/Landing.jsx'
@@ -19,26 +20,30 @@ import PinUnlock   from '@/pages/Auth/PinUnlock.jsx'
 import RoleSelect  from '@/pages/Auth/RoleSelect.jsx'
 
 // Owner
-import OwnerDashboard        from '@/pages/Owner/Dashboard.jsx'
-import OwnerProfile          from '@/pages/Owner/Profile.jsx'
-import OwnerBranches         from '@/pages/Owner/Branches.jsx'
-import OwnerBranchForm       from '@/pages/Owner/BranchForm.jsx'
-import OwnerListings         from '@/pages/Owner/Listings.jsx'
-import OwnerListingForm      from '@/pages/Owner/ListingForm.jsx'
-import OwnerBookingMgmt      from '@/pages/Owner/BookingManagement.jsx'
+import OwnerDashboard   from '@/pages/Owner/Dashboard.jsx'
+import OwnerProfile     from '@/pages/Owner/Profile.jsx'
+import OwnerBranches    from '@/pages/Owner/Branches.jsx'
+import OwnerBranchForm  from '@/pages/Owner/BranchForm.jsx'
+import OwnerListings    from '@/pages/Owner/Listings.jsx'
+import OwnerListingForm from '@/pages/Owner/ListingForm.jsx'
+import OwnerBookingMgmt from '@/pages/Owner/BookingManagement.jsx'
 
 // Rider
-import RiderDiscover         from '@/pages/Rider/Discover.jsx'
-import RiderProfile          from '@/pages/Rider/Profile.jsx'
-import RiderBranchDetail     from '@/pages/Rider/BranchDetail.jsx'
-import RiderCart             from '@/pages/Rider/Cart.jsx'
-import RiderCheckout         from '@/pages/Rider/Checkout.jsx'
-import RiderBookingConfirm   from '@/pages/Rider/BookingConfirm.jsx'
-import RiderMyBookings       from '@/pages/Rider/MyBookings.jsx'
+import RiderDiscover       from '@/pages/Rider/Discover.jsx'
+import RiderProfile        from '@/pages/Rider/Profile.jsx'
+import RiderBranchDetail   from '@/pages/Rider/BranchDetail.jsx'
+import RiderCart           from '@/pages/Rider/Cart.jsx'
+import RiderCheckout       from '@/pages/Rider/Checkout.jsx'
+import RiderBookingConfirm from '@/pages/Rider/BookingConfirm.jsx'
+import RiderMyBookings     from '@/pages/Rider/MyBookings.jsx'
 
 // Shared
 import Settings from '@/pages/Shared/Settings.jsx'
 import NotFound from '@/pages/Shared/NotFound.jsx'
+
+// ── AppInner ──────────────────────────────────────────────────────────────────
+// Only mounts after pubkey + sessionUnlocked are set.
+// Handles relay listener, Nostr hydration, offline queue, incoming bookings.
 
 function AppInner() {
   const initRelayListener = useNostrStore(s => s.initRelayListener)
@@ -54,8 +59,11 @@ function AppInner() {
   return null
 }
 
+// ── RequireAuth ───────────────────────────────────────────────────────────────
+
 function RequireAuth({ children, requiredRole }) {
   const { pubkey, role, sessionUnlocked } = useAuthStore()
+
   if (!pubkey) return <Navigate to="/" replace />
   if (!sessionUnlocked) return <Navigate to="/unlock" replace />
   if (requiredRole && role !== requiredRole && role !== 'both') {
@@ -64,49 +72,105 @@ function RequireAuth({ children, requiredRole }) {
   return children
 }
 
+// ── App ───────────────────────────────────────────────────────────────────────
+
 export default function App() {
-  const { pubkey, role, sessionUnlocked } = useAuthStore()
+  const { pubkey, role, sessionUnlocked, loginWithGoogle } = useAuthStore()
   const loadCart = useCartStore(s => s.loadCart)
 
-  useEffect(() => { loadCart() }, [])
+  // Load cart from Dexie on startup
+  useEffect(() => {
+    loadCart()
+  }, [])
+
+  // Restore Google session on app reload / refresh.
+  // Session restoration is now handled in Login.jsx for better UX.
+  // This effect just ensures the token manager is initialized.
+  useEffect(() => {
+    async function initTokenManager() {
+      try {
+        await restoreSession()
+      } catch (err) {
+        console.warn('[App] Token manager init:', err.message)
+      }
+    }
+    initTokenManager()
+  }, [])
 
   return (
     <>
       <OfflineBanner />
+
+      {/* AppInner only mounts when fully authenticated */}
       {pubkey && sessionUnlocked && <AppInner />}
+
       <Routes>
-        {/* ── Public ─────────────────────────────────────────────── */}
-        <Route path="/"         element={<Landing />} />
-        <Route path="/login"    element={<Login />} />
-        <Route path="/generate" element={<GenerateKey />} />
-        <Route path="/pin-setup"element={<PinSetup />} />
-        <Route path="/unlock"   element={<PinUnlock />} />
-        <Route path="/role"     element={<RoleSelect />} />
+        {/* ── Public ───────────────────────────────────────────────────── */}
+        <Route path="/"          element={<Landing />} />
+        <Route path="/login"     element={<Login />} />
+        <Route path="/auth"      element={<Navigate to="/login" replace />} />
+        <Route path="/generate"  element={<GenerateKey />} />
+        <Route path="/pin-setup" element={<PinSetup />} />
+        <Route path="/unlock"    element={<PinUnlock />} />
+        <Route path="/role"      element={<RoleSelect />} />
 
-        {/* ── Owner ──────────────────────────────────────────────── */}
-        <Route path="/owner" element={<RequireAuth><OwnerDashboard /></RequireAuth>} />
-        <Route path="/owner/profile" element={<RequireAuth><OwnerProfile /></RequireAuth>} />
-        <Route path="/owner/branches" element={<RequireAuth><OwnerBranches /></RequireAuth>} />
-        <Route path="/owner/branches/new" element={<RequireAuth><OwnerBranchForm /></RequireAuth>} />
-        <Route path="/owner/branches/:branchId/edit" element={<RequireAuth><OwnerBranchForm /></RequireAuth>} />
-        <Route path="/owner/branches/:branchId/listings" element={<RequireAuth><OwnerListings /></RequireAuth>} />
-        <Route path="/owner/branches/:branchId/listings/new" element={<RequireAuth><OwnerListingForm /></RequireAuth>} />
-        <Route path="/owner/listings/:listingId/edit" element={<RequireAuth><OwnerListingForm /></RequireAuth>} />
-        <Route path="/owner/bookings" element={<RequireAuth><OwnerBookingMgmt /></RequireAuth>} />
+        {/* ── Owner ────────────────────────────────────────────────────── */}
+        <Route path="/owner"
+          element={<RequireAuth><OwnerDashboard /></RequireAuth>} />
 
-        {/* ── Rider ──────────────────────────────────────────────── */}
-        <Route path="/rider/discover" element={<RequireAuth><RiderDiscover /></RequireAuth>} />
-        <Route path="/rider/profile"  element={<RequireAuth><RiderProfile /></RequireAuth>} />
-        <Route path="/rider/branches/:branchId" element={<RequireAuth><RiderBranchDetail /></RequireAuth>} />
-        <Route path="/rider/cart"     element={<RequireAuth><RiderCart /></RequireAuth>} />
-        <Route path="/rider/checkout" element={<RequireAuth><RiderCheckout /></RequireAuth>} />
-        <Route path="/rider/booking/:bookingId" element={<RequireAuth><RiderBookingConfirm /></RequireAuth>} />
-        <Route path="/rider/bookings" element={<RequireAuth><RiderMyBookings /></RequireAuth>} />
+        <Route path="/owner/profile"
+          element={<RequireAuth><OwnerProfile /></RequireAuth>} />
 
-        {/* ── Shared ─────────────────────────────────────────────── */}
-        <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
-        <Route path="*"         element={<NotFound />} />
+        <Route path="/owner/branches"
+          element={<RequireAuth><OwnerBranches /></RequireAuth>} />
+
+        <Route path="/owner/branches/new"
+          element={<RequireAuth><OwnerBranchForm /></RequireAuth>} />
+
+        <Route path="/owner/branches/:branchId/edit"
+          element={<RequireAuth><OwnerBranchForm /></RequireAuth>} />
+
+        <Route path="/owner/branches/:branchId/listings"
+          element={<RequireAuth><OwnerListings /></RequireAuth>} />
+
+        <Route path="/owner/branches/:branchId/listings/new"
+          element={<RequireAuth><OwnerListingForm /></RequireAuth>} />
+
+        <Route path="/owner/listings/:listingId/edit"
+          element={<RequireAuth><OwnerListingForm /></RequireAuth>} />
+
+        <Route path="/owner/bookings"
+          element={<RequireAuth><OwnerBookingMgmt /></RequireAuth>} />
+
+        {/* ── Rider ────────────────────────────────────────────────────── */}
+        <Route path="/rider/discover"
+          element={<RequireAuth><RiderDiscover /></RequireAuth>} />
+
+        <Route path="/rider/profile"
+          element={<RequireAuth><RiderProfile /></RequireAuth>} />
+
+        <Route path="/rider/branches/:branchId"
+          element={<RequireAuth><RiderBranchDetail /></RequireAuth>} />
+
+        <Route path="/rider/cart"
+          element={<RequireAuth><RiderCart /></RequireAuth>} />
+
+        <Route path="/rider/checkout"
+          element={<RequireAuth><RiderCheckout /></RequireAuth>} />
+
+        <Route path="/rider/booking/:bookingId"
+          element={<RequireAuth><RiderBookingConfirm /></RequireAuth>} />
+
+        <Route path="/rider/bookings"
+          element={<RequireAuth><RiderMyBookings /></RequireAuth>} />
+
+        {/* ── Shared ───────────────────────────────────────────────────── */}
+        <Route path="/settings"
+          element={<RequireAuth><Settings /></RequireAuth>} />
+
+        <Route path="*" element={<NotFound />} />
       </Routes>
+
       <SnackbarNotifier />
       <ConfirmDialog />
     </>

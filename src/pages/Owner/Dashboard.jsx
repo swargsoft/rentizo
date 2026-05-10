@@ -63,7 +63,7 @@ export default function OwnerDashboard() {
             : <CheckCircleIcon sx={{ fontSize: 14, color: 'success.main' }} />
           }
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            {syncing ? 'Syncing with relays…' : syncLabel}
+            {syncing ? 'Syncing…' : syncLabel}
           </Typography>
           {!syncing && (
             <Button

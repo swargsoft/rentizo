@@ -80,9 +80,19 @@ export async function connectRelays(relayUrls) {
  */
 async function getRelay(url) {
   const cached = _connections.get(url)
-  if (cached) return cached
+  if (cached) {
+    // nostr-tools Relay exposes connection state via websocket
+    // If still connected, reuse it
+    try {
+      if (cached.connected) return cached
+    } catch {}
+    // Stale connection — remove and reconnect
+    console.log(`[relay] stale connection detected for ${url}, reconnecting…`)
+    _connections.delete(url)
+    _status.set(url, 'connecting')
+    notify()
+  }
 
-  // Not in cache — connect fresh
   try {
     const relay = await Relay.connect(url)
     _connections.set(url, relay)

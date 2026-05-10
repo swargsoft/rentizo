@@ -14,6 +14,8 @@ import { processListingImages, isValidImageFile } from '@/utils/imageCompression
 import { storeListingImage, blobToBase64, getListingImageUrls } from '@/db/cache.js'
 import db from '@/db/index.js'
 import { nanoid } from '@/utils/nanoid.js'
+import driveApi from '@/utils/driveApi.js'
+
 
 const VEHICLE_TYPES = ['bike','scooter','cycle','car','other']
 
@@ -79,11 +81,15 @@ export default function ListingForm() {
   async function handleImageSelect(e) {
     const files = Array.from(e.target.files ?? []).filter(isValidImageFile)
     if (!files.length) return
-    const remaining = 5 - images.length
-    const processed = await processListingImages(files.slice(0, remaining))
-    setPendingImages(processed)
+    const newImages = files.slice(0, 5 - images.length).map(file => ({
+      previewUrl: URL.createObjectURL(file),
+      fileId:     null,
+      file,
+    }))
+    setImages(prev => [...prev, ...newImages])
     e.target.value = ''
   }
+
 
   useEffect(() => {
     if (pendingImages.length > 0 && !cropImage) {
@@ -172,18 +178,17 @@ export default function ListingForm() {
     try {
       const id = listingId ?? nanoid()
       // Process images to base64 for Nostr event
-      const base64Images = await Promise.all(images.map(async img => {
-        if (img.base64) return img.base64
-        if (img.blob)   return blobToBase64(img.blob)
-        return null
-      }))
-      const validBase64 = base64Images.filter(Boolean)
-      console.log("this is test log");
+      const finalImages = await Promise.all(
+        images.map(async (img, idx) => {
+          if (img.fileId) return img.fileId     // already on Drive
+          if (!img.file)  return null
+          const { compressListingImage } = await import('@/utils/imageCompression.js')
+          const compressed = await compressListingImage(img.file)
+          return driveApi.uploadListingImage(compressed, id, idx)
+        })
+      )
 
-      // Store in Cache API
-      await Promise.all(images.map(async (img, idx) => {
-        if (img.blob) await storeListingImage(id, idx, img.blob)
-      }))
+      const validFileIds = finalImages.filter(Boolean)
       
         
 
@@ -192,7 +197,7 @@ export default function ListingForm() {
         vehicleName: vehicleName.trim(), vehicleNumber: vehicleNumber.trim(),
         vehicleType, pricePerDay: +pricePerDay, securityAmount: +securityAmount,
         quantity: +quantity, description: description.trim(),
-        images: validBase64, isPublished, updatedAt: Math.floor(Date.now()/1000),
+        images: validFileIds, isPublished, updatedAt: Math.floor(Date.now()/1000),
       }
 
       await publishListing(listingData, secretKey)

@@ -8,7 +8,6 @@ export default function BranchPinMap({ lat, lng, onLocationChange, height = 220 
   const mapRef       = useRef(null)
   const leafletMap   = useRef(null)
   const markerRef    = useRef(null)
-
   useEffect(() => {
     async function initMap() {
       if (!mapRef.current) return
@@ -33,19 +32,61 @@ export default function BranchPinMap({ lat, lng, onLocationChange, height = 220 
         maxZoom: 19,
       }).addTo(map)
 
-      const customIcon = L.divIcon({
-        html: `<div style="
-          width:36px;height:36px;border-radius:50% 50% 50% 0;
-          background:linear-gradient(135deg,#FF5722,#E64A19);
-          border:3px solid #fff;transform:rotate(-45deg);
-          box-shadow:0 4px 12px rgba(255,87,34,0.5)"></div>`,
-        iconSize: [36, 36],
-        iconAnchor: [18, 36],
-        className: '',
-      })
+      // const customIcon = L.divIcon({
+      //   html: `<div style="
+      //     width:36px;height:36px;border-radius:50% 50% 50% 0;
+      //     background:linear-gradient(135deg,#FF5722,#E64A19);
+      //     border:3px solid #fff;transform:rotate(-45deg);
+      //     box-shadow:0 4px 12px rgba(255,87,34,0.5)"></div>`,
+      //   iconSize: [36, 36],
+      //   iconAnchor: [18, 36],
+      //   className: '',
+      // })
 
-      const marker = L.marker(center, { icon: customIcon, draggable: true }).addTo(map)
-      markerRef.current = marker
+      // const marker = L.marker(center, { icon: customIcon, draggable: true }).addTo(map)
+      // markerRef.current = marker
+
+        
+
+    const baseUrl = import.meta.env.BASE_URL
+
+    const customIcon = L.divIcon({
+      html: `
+        <div style="
+          width:36px;
+          height:36px;
+          border-radius:50% 50% 50% 0;
+          background:linear-gradient(135deg,#3A3A3A,#2A2A2A);
+          border:2px solid #fff;
+          transform:rotate(-45deg);
+          box-shadow:0 4px 12px rgba(42,42,42,0.6);
+          overflow:hidden;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+        ">
+          <img 
+            src="${baseUrl}images/logo-without-name.png"
+            style="
+              width:30px;
+              height:30px;
+              object-fit:contain;
+              transform:rotate(45deg);
+            "
+          />
+        </div>
+      `,
+      iconSize: [36, 36],
+      iconAnchor: [18, 36],
+      className: '',
+    })
+
+    const marker = L.marker(center, {
+      icon: customIcon,
+      draggable: true,
+    }).addTo(map)
+
+    markerRef.current = marker
 
       marker.on('dragend', () => {
         const { lat: newLat, lng: newLng } = marker.getLatLng()

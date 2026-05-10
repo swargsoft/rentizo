@@ -5,6 +5,7 @@ import { ThemeProvider, CssBaseline } from '@mui/material'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
+import { GoogleOAuthProvider } from '@react-oauth/google'
 import theme from './theme.js'
 import App from './App.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
@@ -15,15 +16,17 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <ErrorBoundary>
-    <BrowserRouter basename="/rentizo">
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider theme={theme}>
-          <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <CssBaseline />
-            <App />
-          </LocalizationProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </BrowserRouter>
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
+      <BrowserRouter basename="/rentizo">
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider theme={theme}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <CssBaseline />
+              <App />
+            </LocalizationProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </BrowserRouter>
+    </GoogleOAuthProvider>
   </ErrorBoundary>
 )

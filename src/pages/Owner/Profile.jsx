@@ -7,9 +7,9 @@ import useUiStore from '@/store/uiStore.js'
 import { useOwnerProfile } from '@/hooks/useNostrProfile.js'
 import { publishOwnerProfile } from '@/nostr/publish.js'
 import { validatePhone, validateUpiId, formatPhone } from '@/utils/nostrValidation.js'
-import { compressProfileImage } from '@/utils/imageCompression.js'
-import { storeProfileImage, blobToBase64 } from '@/db/cache.js'
 import db from '@/db/index.js'
+import driveApi from '@/utils/driveApi.js'
+
 
 export default function OwnerProfile() {
   const { pubkey, secretKey } = useAuthStore()
@@ -20,26 +20,43 @@ export default function OwnerProfile() {
   const [phone,   setPhone]   = useState('')
   const [upiId,   setUpiId]   = useState('')
   const [avatar,  setAvatar]  = useState(null)   // base64 or blob URL
-  const [avatarBlob, setAvatarBlob] = useState(null)
   const [saving,  setSaving]  = useState(false)
   const [errors,  setErrors]  = useState({})
+  const [avatarFile,  setAvatarFile]  = useState(null)
+  const [bannerFile,  setBannerFile]  = useState(null)
+  const [bannerPreview, setBannerPreview] = useState(null)
 
   useEffect(() => {
     if (profile) {
       setName(profile.name ?? '')
       setPhone(profile.phone ?? '')
       setUpiId(profile.upiId ?? '')
+      // Restore avatar from Drive CDN URL when no local blob selected
+      if (profile.profilePicture && !avatarFile) {
+        setAvatar(driveApi.constructor.imageUrl(profile.profilePicture))
+      }
+      // Restore banner preview from Drive CDN URL
+      if (profile.bannerImage && !bannerFile) {
+        setBannerPreview(driveApi.constructor.imageUrl(profile.bannerImage))
+      }
     }
   }, [profile])
 
   async function handleAvatarChange(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    const { compressProfileImage } = await import('@/utils/imageCompression.js')
     const compressed = await compressProfileImage(file)
-    setAvatarBlob(compressed)
+    setAvatarFile(compressed)
     setAvatar(URL.createObjectURL(compressed))
   }
 
+  async function handleBannerChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBannerFile(file)
+    setBannerPreview(URL.createObjectURL(file))
+  }
   function validate() {
     const errs = {}
     if (!name.trim())           errs.name  = 'Name is required'
@@ -54,16 +71,22 @@ export default function OwnerProfile() {
     setSaving(true)
     try {
       let profilePicture = profile?.profilePicture ?? ''
-      if (avatarBlob) {
-        await storeProfileImage(pubkey, avatarBlob)
-        profilePicture = await blobToBase64(avatarBlob)
+      let bannerImage    = profile?.bannerImage    ?? ''
+
+      if (avatarFile) {
+        profilePicture = await driveApi.uploadProfilePhoto(avatarFile)
       }
-      const data = { name: name.trim(), phone: formatPhone(phone), upiId: upiId.trim(), profilePicture, updatedAt: Math.floor(Date.now() / 1000)  }
+      if (bannerFile) {
+        bannerImage = await driveApi.uploadBanner(bannerFile)
+      }
+
+      const ts   = Math.floor(Date.now() / 1000)
+      const data = { name: name.trim(), phone: formatPhone(phone), upiId: upiId.trim(), profilePicture, bannerImage, updatedAt: ts }
       await publishOwnerProfile(data, secretKey)
-      await db.ownerProfiles.put({ pubkey, ...data})
+      await db.ownerProfiles.put({ pubkey, ...data })
       showSnackbar('Profile saved!', 'success')
     } catch (err) {
-      showSnackbar('Failed to save: ' + err.message, 'error')
+      showSnackbar('Error: ' + err.message, 'error')
     } finally {
       setSaving(false)
     }
@@ -72,19 +95,146 @@ export default function OwnerProfile() {
   return (
     <AppLayout title="Owner Profile">
       <Box sx={{ p: 2, pb: 4 }}>
-        {/* Avatar */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
-          <Box sx={{ position: 'relative' }}>
-            <Avatar src={avatar || profile?.profilePicture} sx={{ width: 80, height: 80, bgcolor: '#FF5722', fontSize: '2rem' }}>
-              {name?.[0]?.toUpperCase() ?? '?'}
-            </Avatar>
+
+        {/* Banner + Avatar Section */}
+        <Box sx={{ position: 'relative', mb: 8 }}>
+          {/* Banner */}
+          <Box
+            sx={{
+              width: '100%',
+              height: 180,
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              borderBottomLeftRadius: 8,
+              borderBottomRightRadius: 8,
+              overflow: 'hidden',
+              position: 'relative',
+              bgcolor: '#1E1E1E',
+              border: '1px solid',
+              borderColor: 'divider',
+              cursor: 'pointer',
+            }}
+            onClick={() => document.getElementById('banner-input').click()}
+          >
+            {(bannerPreview || profile?.bannerImage) ? (
+              <img
+                src={
+                  bannerPreview ||
+                  driveApi.constructor.imageUrl(profile.bannerImage)
+                }
+                alt="banner"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                }}
+              />
+            ) : (
+              <Box
+                sx={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  bgcolor: '#0F172A',
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ color: 'rgba(255,255,255,0.5)' }}
+                >
+                  Add Banner Image
+                </Typography>
+              </Box>
+            )}
+
+            {/* Banner Edit Button */}
             <IconButton
               component="label"
-              sx={{ position: 'absolute', bottom: -4, right: -4, bgcolor: '#FF5722', width: 28, height: 28, '&:hover': { bgcolor: '#E64A19' } }}
+              sx={{
+                position: 'absolute',
+                top: 12,
+                right: 12,
+                bgcolor: 'rgba(0,0,0,0.65)',
+                backdropFilter: 'blur(6px)',
+                color: '#fff',
+                width: 38,
+                height: 38,
+                '&:hover': {
+                  bgcolor: 'rgba(0,0,0,0.8)',
+                },
+              }}
             >
-              <CameraAltIcon sx={{ fontSize: 14, color: '#fff' }} />
-              <input type="file" hidden accept="image/*" onChange={handleAvatarChange} />
+              <CameraAltIcon sx={{ fontSize: 18 }} />
+              <input
+                id="banner-input"
+                type="file"
+                hidden
+                accept="image/*"
+                onChange={handleBannerChange}
+              />
             </IconButton>
+          </Box>
+
+          {/* Profile Avatar */}
+          <Box
+            sx={{
+              position: 'absolute',
+              bottom: -55,
+              left: 24,
+            }}
+          >
+            <Box sx={{ position: 'relative' }}>
+              <Avatar
+                imgProps={{
+                  referrerPolicy: 'no-referrer',
+                }}
+                src={
+                  avatar ||
+                  (profile?.profilePicture
+                    ? driveApi.constructor.imageUrl(profile.profilePicture)
+                    : null)
+                }
+                sx={{
+                  width: 110,
+                  height: 110,
+                  border: '5px solid',
+                  borderColor: 'background.paper',
+                  bgcolor: '#333',
+                  fontSize: 42,
+                  boxShadow: 4,
+                }}
+              >
+                {name?.[0]?.toUpperCase() ?? '?'}
+              </Avatar>
+
+              {/* Avatar Edit Button */}
+              <IconButton
+                component="label"
+                sx={{
+                  position: 'absolute',
+                  bottom: 2,
+                  right: 2,
+                  bgcolor: '#fff',
+                  color: '#111',
+                  width: 34,
+                  height: 34,
+                  boxShadow: 3,
+                  '&:hover': {
+                    bgcolor: '#f5f5f5',
+                  },
+                }}
+              >
+                <CameraAltIcon sx={{ fontSize: 18 }} />
+                <input
+                  type="file"
+                  hidden
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                />
+              </IconButton>
+            </Box>
           </Box>
         </Box>
 
