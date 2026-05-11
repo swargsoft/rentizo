@@ -1,23 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
 import { Box, Typography, Button, Stack, TextField, Select, MenuItem, FormControl, InputLabel,
-         Switch, FormControlLabel, Alert, CircularProgress, IconButton, Grid, Drawer, Slider } from '@mui/material'
+         Switch, FormControlLabel, CircularProgress, IconButton, Grid } from '@mui/material'
 import AddPhotoIcon from '@mui/icons-material/AddPhotoAlternate'
 import DeleteIcon   from '@mui/icons-material/Delete'
-import ZoomInIcon   from '@mui/icons-material/ZoomIn'
-import ZoomOutIcon  from '@mui/icons-material/ZoomOut'
 import { useNavigate, useParams } from 'react-router-dom'
 import AppLayout from '@/components/Common/AppLayout.jsx'
+import ImageCropDialog from '@/components/Common/ImageCropDialog.jsx'
+import { CROP_PRESETS } from '@/components/Common/ProfileMedia.jsx'
 import useAuthStore from '@/store/authStore.js'
 import useUiStore from '@/store/uiStore.js'
-import { publishListing } from '@/nostr/publish.js'
-import { processListingImages, isValidImageFile } from '@/utils/imageCompression.js'
-import { storeListingImage, blobToBase64, getListingImageUrls } from '@/db/cache.js'
+import { publishListing, publishDeletion } from '@/nostr/publish.js'
+import { isValidImageFile } from '@/utils/imageCompression.js'
+import { getListingImageUrl } from '@/db/cache.js'
 import db from '@/db/index.js'
 import { nanoid } from '@/utils/nanoid.js'
 import driveApi from '@/utils/driveApi.js'
-
-
-const VEHICLE_TYPES = ['bike','scooter','cycle','car','other']
+import { VEHICLE_TYPES } from '@/utils/constants.js'
 
 export default function ListingForm() {
   const navigate              = useNavigate()
@@ -28,144 +26,125 @@ export default function ListingForm() {
   const isEdit                = !!listingId
 
   const [vehicleName,    setVehicleName]    = useState('')
-  const [vehicleNumber,  setVehicleNumber]  = useState('')
+  const [vehicleNumbers, setVehicleNumbers]  = useState([''])
   const [vehicleType,    setVehicleType]    = useState('bike')
   const [pricePerDay,    setPricePerDay]    = useState('')
+  const [discountedPrice, setDiscountedPrice] = useState('')
   const [securityAmount, setSecurityAmount] = useState('')
   const [quantity,       setQuantity]       = useState('1')
   const [description,    setDescription]    = useState('')
   const [isPublished,    setIsPublished]    = useState(false)
-  const [images,         setImages]         = useState([])   // [{ previewUrl, blob, base64 }]
+  // images: [{ previewUrl, blob, fileId }]
+  // - blob: new image blob to upload
+  // - fileId: existing Drive file ID (from edit mode)
+  // - previewUrl: blob URL or Drive URL
+  const [images,         setImages]         = useState([])
   const [saving,         setSaving]         = useState(false)
   const [errors,         setErrors]         = useState({})
   const [targetBranchId, setTargetBranchId] = useState(branchId)
-  const [cropImage,      setCropImage]      = useState(null) // { src, blob, tempIndex }
-  const [pendingImages,  setPendingImages]  = useState([])   // images waiting to be cropped
-  const [cropZoom,       setCropZoom]       = useState(1)
-  const [cropPosition,   setCropPosition]   = useState({ x: 0, y: 0 })
-  const fileRef = useRef()
-  const canvasRef = useRef()
 
-  useEffect(() => {
-    if (cropImage && canvasRef.current) {
-      const canvas = canvasRef.current
-      const ctx = canvas.getContext('2d')
-      const img = new Image()
-      
-      img.onload = () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        const scale = cropZoom
-        const x = (canvas.width - img.width * scale) / 2 + cropPosition.x
-        const y = (canvas.height - img.height * scale) / 2 + cropPosition.y
-        ctx.drawImage(img, x, y, img.width * scale, img.height * scale)
-      }
-      img.src = cropImage.src
-    }
-  }, [cropImage, cropZoom, cropPosition])
+  // Crop dialog state
+  const [cropDialogOpen, setCropDialogOpen] = useState(false)
+  const [cropImageSrc, setCropImageSrc] = useState(null)
+  const fileRef = useRef()
 
   useEffect(() => {
     if (isEdit) {
       db.listings.get(listingId).then(async l => {
         if (!l) return
-        setVehicleName(l.vehicleName); setVehicleNumber(l.vehicleNumber)
+        setVehicleName(l.vehicleName || '')
+        setVehicleNumbers(l.vehicleNumbers?.length ? l.vehicleNumbers : (l.vehicleNumber ? [l.vehicleNumber] : ['']))
         setVehicleType(l.vehicleType); setPricePerDay(String(l.pricePerDay))
-        setSecurityAmount(String(l.securityAmount)); setQuantity(String(l.quantity))
+        setDiscountedPrice(l.discountedPrice ? String(l.discountedPrice) : '')
+        setSecurityAmount(String(l.securityAmount)); setQuantity(String(l.quantity || 1))
         setDescription(l.description ?? ''); setIsPublished(l.isPublished)
         setTargetBranchId(l.branchId)
-        const urls = await getListingImageUrls(listingId, 5)
-        setImages(urls.map(u => ({ previewUrl: u, blob: null, base64: null })))
+
+        // Load existing images with their fileIds
+        if (l.images && l.images.length > 0) {
+          const loadedImages = await Promise.all(
+            l.images.map(async (fileId, idx) => {
+              // Try local cache first, fall back to Drive URL
+              const localUrl = await getListingImageUrl(listingId, idx)
+              return {
+                previewUrl: localUrl || driveApi.constructor.imageUrl(fileId),
+                blob: null,
+                fileId: fileId,
+              }
+            })
+          )
+          setImages(loadedImages.filter(img => img.previewUrl))
+        }
       })
     }
   }, [listingId])
 
-  async function handleImageSelect(e) {
+  // Update vehicle numbers array when quantity changes
+  useEffect(() => {
+    const qty = parseInt(quantity) || 0
+    setVehicleNumbers(prev => {
+      const newArr = [...prev]
+      while (newArr.length < qty) newArr.push('')
+      while (newArr.length > qty) newArr.pop()
+      return newArr
+    })
+  }, [quantity])
+
+  function handleImageSelect(e) {
     const files = Array.from(e.target.files ?? []).filter(isValidImageFile)
     if (!files.length) return
-    const newImages = files.slice(0, 5 - images.length).map(file => ({
-      previewUrl: URL.createObjectURL(file),
-      fileId:     null,
-      file,
-    }))
-    setImages(prev => [...prev, ...newImages])
+
+    const remaining = 5 - images.length
+    if (remaining <= 0) return
+
+    // Take only as many as we can fit
+    const file = files[0]
+    const objectUrl = URL.createObjectURL(file)
+    setCropImageSrc(objectUrl)
+    setCropDialogOpen(true)
+
     e.target.value = ''
   }
 
+  function handleCropComplete(croppedBlob) {
+    setImages(prev => [...prev, {
+      previewUrl: URL.createObjectURL(croppedBlob),
+      blob: croppedBlob,
+      fileId: null,
+    }])
+    setCropDialogOpen(false)
+    setCropImageSrc(null)
+  }
 
-  useEffect(() => {
-    if (pendingImages.length > 0 && !cropImage) {
-      const nextImage = pendingImages[0]
-      setCropImage({ src: nextImage.previewUrl, blob: nextImage.blob, tempIndex: 0 })
-      setCropZoom(1)
-      setCropPosition({ x: 0, y: 0 })
+  function closeCropDialog() {
+    if (cropImageSrc) {
+      URL.revokeObjectURL(cropImageSrc)
+      setCropImageSrc(null)
     }
-  }, [pendingImages, cropImage])
-
-  function closeCrop() {
-    setPendingImages(prev => prev.slice(1))
-    setCropImage(null)
-  }
-
-  function zoomIn() {
-    setCropZoom(prev => Math.min(3, prev + 0.2))
-  }
-
-  function zoomOut() {
-    setCropZoom(prev => Math.max(0.5, prev - 0.2))
-  }
-
-  function applyCrop() {
-    if (!cropImage || !canvasRef.current) return
-
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    
-    // Create a new canvas for the cropped square image
-    const croppedCanvas = document.createElement('canvas')
-    const croppedCtx = croppedCanvas.getContext('2d')
-    const size = Math.min(canvas.width, canvas.height)
-    
-    croppedCanvas.width = size
-    croppedCanvas.height = size
-    
-    // Get the current image data from the canvas
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    
-    // Create a temporary canvas to hold the full image
-    const tempCanvas = document.createElement('canvas')
-    const tempCtx = tempCanvas.getContext('2d')
-    tempCanvas.width = canvas.width
-    tempCanvas.height = canvas.height
-    tempCtx.putImageData(imageData, 0, 0)
-    
-    // Calculate the crop area (center square)
-    const cropX = (canvas.width - size) / 2
-    const cropY = (canvas.height - size) / 2
-    
-    // Draw the cropped square
-    croppedCtx.drawImage(tempCanvas, cropX, cropY, size, size, 0, 0, size, size)
-    
-    croppedCanvas.toBlob(async (blob) => {
-      const base64 = await blobToBase64(blob)
-      const previewUrl = URL.createObjectURL(blob)
-      
-      // Add the cropped image to the main images array
-      setImages(prev => [...prev, { previewUrl, blob, base64 }])
-      
-      // Remove this image from pending and move to next
-      setPendingImages(prev => prev.slice(1))
-      setCropImage(null)
-    }, 'image/jpeg', 0.9)
+    setCropDialogOpen(false)
   }
 
   function removeImage(i) {
-    setImages(prev => prev.filter((_, idx) => idx !== i))
+    setImages(prev => {
+      const img = prev[i]
+      // Cleanup blob URLs to prevent memory leaks
+      if (img?.previewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(img.previewUrl)
+      }
+      return prev.filter((_, idx) => idx !== i)
+    })
   }
 
   function validate() {
     const errs = {}
     if (!vehicleName.trim())       errs.vehicleName    = 'Vehicle name required'
-    if (!vehicleNumber.trim())     errs.vehicleNumber  = 'Vehicle number required'
+    const emptyVehicleNumbers = (vehicleNumbers || []).filter(v => !v?.trim())
+    if (emptyVehicleNumbers.length > 0) errs.vehicleNumbers = `${emptyVehicleNumbers.length} vehicle number${emptyVehicleNumbers.length > 1 ? 's' : ''} missing`
     if (!pricePerDay || isNaN(+pricePerDay) || +pricePerDay <= 0) errs.pricePerDay = 'Enter valid price'
+    if (discountedPrice) {
+      if (isNaN(+discountedPrice) || +discountedPrice <= 0) errs.discountedPrice = 'Enter valid discounted price'
+      else if (+discountedPrice >= +pricePerDay) errs.discountedPrice = 'Must be less than regular price'
+    }
     if (isNaN(+securityAmount) || +securityAmount < 0) errs.securityAmount = 'Enter valid security amount'
     if (!quantity || isNaN(+quantity) || +quantity < 1) errs.quantity = 'Quantity must be at least 1'
     setErrors(errs)
@@ -177,25 +156,25 @@ export default function ListingForm() {
     setSaving(true)
     try {
       const id = listingId ?? nanoid()
-      // Process images to base64 for Nostr event
+
+      // Process images - upload new blobs to Drive, keep existing fileIds
       const finalImages = await Promise.all(
         images.map(async (img, idx) => {
-          if (img.fileId) return img.fileId     // already on Drive
-          if (!img.file)  return null
-          const { compressListingImage } = await import('@/utils/imageCompression.js')
-          const compressed = await compressListingImage(img.file)
-          return driveApi.uploadListingImage(compressed, id, idx)
+          if (img.fileId) return img.fileId  // already on Drive, keep it
+          if (!img.blob) return null
+          // Upload new blob
+          return driveApi.uploadListingImage(img.blob, id, idx)
         })
       )
 
       const validFileIds = finalImages.filter(Boolean)
-      
-        
 
       const listingData = {
         id, branchId: targetBranchId, ownerPubkey: pubkey,
-        vehicleName: vehicleName.trim(), vehicleNumber: vehicleNumber.trim(),
-        vehicleType, pricePerDay: +pricePerDay, securityAmount: +securityAmount,
+        vehicleName: vehicleName.trim(), vehicleNumbers: vehicleNumbers.map(v => v.trim()),
+        vehicleType, pricePerDay: +pricePerDay,
+        discountedPrice: discountedPrice ? +discountedPrice : null,
+        securityAmount: +securityAmount,
         quantity: +quantity, description: description.trim(),
         images: validFileIds, isPublished, updatedAt: Math.floor(Date.now()/1000),
       }
@@ -207,24 +186,33 @@ export default function ListingForm() {
     } catch (err) {
       showSnackbar('Error: ' + err.message, 'error')
       console.log(err);
-      
+
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete() {
-    showConfirm('Delete Listing?', 'This will remove the listing from Nostr and your device.', async () => {
+    showConfirm('Delete Listing?', 'This will remove the listing from Nostr and delete all images from Drive.', async () => {
       try {
         const l = await db.listings.get(listingId)
+
+        // Publish deletion to Nostr
         if (l?.nostrEventId) {
-          const { publishDeletion } = await import('@/nostr/publish.js')
           await publishDeletion([l.nostrEventId], secretKey)
         }
+
+        // Delete images from Drive
+        await driveApi.deleteListing(listingId)
+
+        // Delete from local DB
         await db.listings.delete(listingId)
+
         showSnackbar('Listing deleted', 'info')
         navigate(-1)
-      } catch (err) { showSnackbar('Error: ' + err.message, 'error') }
+      } catch (err) {
+        showSnackbar('Error: ' + err.message, 'error')
+      }
     })
   }
 
@@ -236,30 +224,59 @@ export default function ListingForm() {
           <TextField label="Vehicle Name" value={vehicleName} onChange={e => setVehicleName(e.target.value)}
             placeholder="e.g. Honda Activa 6G" error={!!errors.vehicleName} helperText={errors.vehicleName} />
 
-          <TextField label="Vehicle Number" value={vehicleNumber} onChange={e => setVehicleNumber(e.target.value)}
-            placeholder="e.g. MH12AB1234" inputProps={{ style: { textTransform: 'uppercase' } }}
-            error={!!errors.vehicleNumber} helperText={errors.vehicleNumber} />
-
           <FormControl fullWidth>
             <InputLabel>Vehicle Type</InputLabel>
             <Select value={vehicleType} onChange={e => setVehicleType(e.target.value)} label="Vehicle Type"
               sx={{ bgcolor: '#1E1E1E', borderRadius: 1 }}>
               {VEHICLE_TYPES.map(t => (
-                <MenuItem key={t} value={t} sx={{ textTransform: 'capitalize' }}>{t}</MenuItem>
+                <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>
               ))}
             </Select>
           </FormControl>
 
           <Stack direction="row" spacing={2}>
-            <TextField label="Price / Day (₹)" value={pricePerDay} onChange={e => setPricePerDay(e.target.value)}
-              type="number" inputProps={{ min: 1 }} error={!!errors.pricePerDay} helperText={errors.pricePerDay} />
+            <TextField label="Regular Price / Day (₹)" value={pricePerDay} onChange={e => setPricePerDay(e.target.value)}
+              type="number" inputProps={{ min: 1 }} error={!!errors.pricePerDay} helperText={errors.pricePerDay} fullWidth />
+          </Stack>
+
+          <Stack direction="row" spacing={2}>
+            <TextField label="Discounted Price (₹)" value={discountedPrice} onChange={e => setDiscountedPrice(e.target.value)}
+              type="number" inputProps={{ min: 1 }} error={!!errors.discountedPrice} helperText={errors.discountedPrice ?? 'Optional: leave empty for no discount'}
+              fullWidth />
             <TextField label="Security (₹)" value={securityAmount} onChange={e => setSecurityAmount(e.target.value)}
-              type="number" inputProps={{ min: 0 }} error={!!errors.securityAmount} helperText={errors.securityAmount} />
+              type="number" inputProps={{ min: 0 }} error={!!errors.securityAmount} helperText={errors.securityAmount} fullWidth />
           </Stack>
 
           <TextField label="Quantity" value={quantity} onChange={e => setQuantity(e.target.value)}
             type="number" inputProps={{ min: 1, max: 99 }}
             error={!!errors.quantity} helperText={errors.quantity ?? 'How many of this vehicle you have'} />
+
+          {/* Dynamic Vehicle Numbers */}
+          {vehicleNumbers.length > 0 && (
+            <Box>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, display: 'block', mb: 1 }}>
+                Vehicle Numbers
+              </Typography>
+              <Stack spacing={1.5}>
+                {vehicleNumbers.map((vn, idx) => (
+                  <TextField
+                    key={idx}
+                    label={`Vehicle No. ${idx + 1}`}
+                    value={vn}
+                    onChange={e => {
+                      const newArr = [...vehicleNumbers]
+                      newArr[idx] = e.target.value
+                      setVehicleNumbers(newArr)
+                    }}
+                    placeholder="e.g. MH12AB1234"
+                    inputProps={{ style: { textTransform: 'uppercase' } }}
+                    error={!!errors.vehicleNumbers}
+                    helperText={idx === 0 ? errors.vehicleNumbers : ''}
+                  />
+                ))}
+              </Stack>
+            </Box>
+          )}
 
           <TextField label="Description (optional)" value={description} onChange={e => setDescription(e.target.value)}
             multiline rows={2} inputProps={{ maxLength: 500 }}
@@ -270,15 +287,15 @@ export default function ListingForm() {
             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
               Photos ({images.length}/5)
             </Typography>
-            
+
             {/* Horizontal Carousel of Images */}
             {images.length > 0 && (
-              <Box sx={{ 
-                mt: 1, 
-                mb: 2, 
-                display: 'flex', 
-                gap: 1, 
-                overflowX: 'auto', 
+              <Box sx={{
+                mt: 1,
+                mb: 2,
+                display: 'flex',
+                gap: 1,
+                overflowX: 'auto',
                 pb: 1,
                 '&::-webkit-scrollbar': { display: 'none' },
                 scrollbarWidth: 'none',
@@ -325,7 +342,7 @@ export default function ListingForm() {
                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>Up to 5 images</Typography>
               </Button>
             )}
-            <input ref={fileRef} type="file" hidden multiple accept="image/*" onChange={handleImageSelect} />
+            <input ref={fileRef} type="file" hidden accept="image/*" onChange={handleImageSelect} />
           </Box>
 
           <FormControlLabel
@@ -347,57 +364,14 @@ export default function ListingForm() {
       </Box>
     </AppLayout>
 
-    {/* Image Cropping Drawer */}
-    <Drawer anchor="bottom" open={!!cropImage} onClose={closeCrop} PaperProps={{ sx: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxWidth: 640, mx: 'auto', width: '100%', pb: 2 } }}>
-      <Box sx={{ px: 3, pt: 3, pb: 1 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Crop Image</Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <Box sx={{ position: 'relative', width: 340, height: 340, border: '2px solid #333', borderRadius: 3, overflow: 'hidden', bgcolor: '#111' }}>
-            <canvas
-              ref={canvasRef}
-              width={340}
-              height={340}
-              style={{ display: 'block', width: '100%', height: '100%', cursor: 'grab' }}
-              onMouseDown={(e) => {
-                const startX = e.clientX - cropPosition.x
-                const startY = e.clientY - cropPosition.y
-                const handleMouseMove = (e) => {
-                  setCropPosition({ x: e.clientX - startX, y: e.clientY - startY })
-                }
-                const handleMouseUp = () => {
-                  document.removeEventListener('mousemove', handleMouseMove)
-                  document.removeEventListener('mouseup', handleMouseUp)
-                }
-                document.addEventListener('mousemove', handleMouseMove)
-                document.addEventListener('mouseup', handleMouseUp)
-              }}
-            />
-          </Box>
-
-          <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-            <IconButton onClick={zoomOut} size="small" sx={{ bgcolor: '#222', color: '#fff', '&:hover': { bgcolor: '#333' } }}>
-              <ZoomOutIcon />
-            </IconButton>
-            <Slider
-              value={cropZoom}
-              onChange={(e, v) => setCropZoom(v)}
-              min={0.5}
-              max={3}
-              step={0.1}
-              sx={{ flex: 1, mx: 1 }}
-            />
-            <IconButton onClick={zoomIn} size="small" sx={{ bgcolor: '#222', color: '#fff', '&:hover': { bgcolor: '#333' } }}>
-              <ZoomInIcon />
-            </IconButton>
-          </Box>
-
-          <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 1 }}>
-            <Button variant="outlined" fullWidth onClick={closeCrop}>Cancel</Button>
-            <Button variant="contained" fullWidth onClick={applyCrop}>Save Crop</Button>
-          </Box>
-        </Box>
-      </Box>
-    </Drawer>
+    {/* Image Crop Dialog */}
+    <ImageCropDialog
+      open={cropDialogOpen}
+      imageSrc={cropImageSrc}
+      onClose={closeCropDialog}
+      onCrop={handleCropComplete}
+      {...CROP_PRESETS.listing}
+    />
     </>
   )
 }

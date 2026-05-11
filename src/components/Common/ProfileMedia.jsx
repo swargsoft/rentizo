@@ -34,6 +34,12 @@ export const CROP_PRESETS = {
     width: 1200,
     height: 600,
   },
+  listing: {
+    aspectRatio: 16 / 9,
+    title: 'Crop Listing Image',
+    width: 1200,
+    height: 675,
+  },
 }
 
 // Normalize Google Drive / Googleusercontent URLs

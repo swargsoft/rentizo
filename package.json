@@ -29,6 +29,7 @@
     "dayjs": "^1.11.20",
     "dexie": "^4.4.1",
     "dexie-react-hooks": "^4.4.0",
+    "embla-carousel-react": "^8.6.0",
     "html5-qrcode": "^2.3.8",
     "leaflet": "^1.9.4",
     "nostr-tools": "^2.23.3",

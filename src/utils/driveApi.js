@@ -367,6 +367,27 @@ class DriveApi {
       .map(r => r.value)
   }
 
+  // ── Delete methods ───────────────────────────────────────────────────────
+
+  /**
+   * Delete a listing folder (all images for that listing).
+   * @param {string} listingId
+   */
+  async deleteListing(listingId) {
+    const rootId = await this.ensureMediaRoot()
+    const listingsId = await this._ensureFolder('listings', 'listings', rootId)
+    const q = encodeURIComponent(
+      `name='${listingId}' and '${listingsId}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`
+    )
+    const res = await this._req(`${DRIVE_API}/files?q=${q}&fields=files(id)`)
+    const data = await res.json()
+    const folderId = data.files?.[0]?.id
+    if (folderId) {
+      await this._req(`${DRIVE_API}/files/${folderId}`, { method: 'DELETE' })
+      console.log(`[Drive] Deleted listing folder: ${listingId}`)
+    }
+  }
+
   // ── URL helpers ───────────────────────────────────────────────────────────
 
   /** Public CDN URL for images */
