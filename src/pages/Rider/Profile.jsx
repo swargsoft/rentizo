@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Box, Typography, Button, Stack, TextField, Avatar, CircularProgress, IconButton } from '@mui/material'
 import CameraAltIcon from '@mui/icons-material/CameraAlt'
 import AppLayout from '@/components/Common/AppLayout.jsx'
+import ImageCropDialog from '@/components/Common/ImageCropDialog.jsx'
 import useAuthStore from '@/store/authStore.js'
 import useUiStore from '@/store/uiStore.js'
 import { useRiderProfile } from '@/hooks/useNostrProfile.js'
@@ -10,6 +11,9 @@ import { validatePhone, formatPhone } from '@/utils/nostrValidation.js'
 import { compressProfileImage } from '@/utils/imageCompression.js'
 import { storeProfileImage, blobToBase64 } from '@/db/cache.js'
 import db from '@/db/index.js'
+
+// Crop preset for rider profile photo
+const CROP_PRESET = { aspectRatio: 1, title: 'Crop Profile Photo', width: 400, height: 400 }
 
 export default function RiderProfile() {
   const { pubkey, secretKey } = useAuthStore()
@@ -23,6 +27,10 @@ export default function RiderProfile() {
   const [saving,     setSaving]     = useState(false)
   const [errors,     setErrors]     = useState({})
 
+  // Crop dialog state
+  const [cropDialogOpen, setCropDialogOpen] = useState(false)
+  const [cropImageSrc, setCropImageSrc] = useState(null)
+
   useEffect(() => {
     if (profile) { setName(profile.name ?? ''); setPhone(profile.phone ?? '') }
   }, [profile])
@@ -30,9 +38,14 @@ export default function RiderProfile() {
   async function handleAvatarChange(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    const compressed = await compressProfileImage(file)
-    setAvatarBlob(compressed)
-    setAvatar(URL.createObjectURL(compressed))
+    const objectUrl = URL.createObjectURL(file)
+    setCropImageSrc(objectUrl)
+    setCropDialogOpen(true)
+  }
+
+  function handleCropComplete(croppedBlob) {
+    setAvatarBlob(croppedBlob)
+    setAvatar(URL.createObjectURL(croppedBlob))
   }
 
   function validate() {
@@ -89,6 +102,15 @@ export default function RiderProfile() {
             {saving ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Save Profile'}
           </Button>
         </Stack>
+
+        {/* Crop Dialog */}
+        <ImageCropDialog
+          open={cropDialogOpen}
+          imageSrc={cropImageSrc}
+          onClose={() => { const url = cropImageSrc; setCropDialogOpen(false); setCropImageSrc(null); if (url) URL.revokeObjectURL(url) }}
+          onCrop={handleCropComplete}
+          {...CROP_PRESET}
+        />
       </Box>
     </AppLayout>
   )
