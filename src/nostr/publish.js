@@ -30,13 +30,13 @@ export async function publishMetadata({ name, picture }, secretKey) {
   return buildAndPublish(KIND.METADATA, JSON.stringify({ name, picture: picture ?? '' }), [], secretKey)
 }
 
-export async function publishOwnerProfile({ name, phone, upiId, profilePicture, updatedAt }, secretKey) {
+export async function publishOwnerProfile({ name, phone, upiId, profilePicture, bannerImage, updatedAt }, secretKey) {
   const pubkey = getPublicKey(secretKey)
   const ts = updatedAt ?? now()
-  await buildAndPublishWithTs(KIND.METADATA, JSON.stringify({ name, picture: profilePicture ?? '' }), [], secretKey, ts)
+  await buildAndPublishWithTs(KIND.METADATA, JSON.stringify({ name, picture: profilePicture ?? '', banner: bannerImage ?? '' }), [], secretKey, ts)
   return buildAndPublishWithTs(
     KIND.OWNER_PROFILE,
-    JSON.stringify({ name, phone, upiId, profilePicture: profilePicture ?? '', updatedAt: ts }),
+    JSON.stringify({ name, phone, upiId, profilePicture: profilePicture ?? '', bannerImage: bannerImage ?? '', updatedAt: ts }),
     [[D_TAG, pubkey]],
     secretKey,
     ts
@@ -91,17 +91,19 @@ export async function publishListing(listing, secretKey) {
   return buildAndPublishWithTs(
     KIND.LISTING,
     JSON.stringify({
-      vehicleName:    listing.vehicleName,
-      vehicleNumber:  listing.vehicleNumber,
-      vehicleType:    listing.vehicleType,
-      pricePerDay:    listing.pricePerDay,
-      securityAmount: listing.securityAmount,
-      quantity:       listing.quantity,
-      images:         listing.images ?? [],
-      description:    listing.description ?? '',
-      isPublished:    listing.isPublished ?? false,
-      branchId:       listing.branchId,
-      updatedAt:      ts,
+      vehicleName:     listing.vehicleName,
+      vehicleNumber:   listing.vehicleNumber,
+      vehicleNumbers:  listing.vehicleNumbers ?? [],
+      vehicleType:     listing.vehicleType,
+      pricePerDay:     listing.pricePerDay,
+      discountedPrice: listing.discountedPrice ?? null,
+      securityAmount:  listing.securityAmount,
+      quantity:        listing.quantity,
+      images:          listing.images ?? [],
+      description:     listing.description ?? '',
+      isPublished:     listing.isPublished ?? false,
+      branchId:        listing.branchId,
+      updatedAt:       ts,
     }),
     [
       [D_TAG, listing.id],

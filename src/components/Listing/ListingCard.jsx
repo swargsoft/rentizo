@@ -40,6 +40,7 @@ import {
   ShareRounded,
   BikeScooterRounded,
   TwoWheelerRounded,
+  MopedRounded,
 } from "@mui/icons-material";
 import {
   Box,
@@ -87,7 +88,7 @@ const DiscountBadge = styled(Chip)(({ theme }) => ({
 
 const VEHICLE_ICONS = {
   bike: TwoWheelerRounded,
-  scooter: TwoWheelerRounded,
+  scooter: MopedRounded,
   cycle: DirectionsBikeRounded,
   car: DirectionsCarRounded,
   other: CommuteRounded,
@@ -373,7 +374,7 @@ export default function ListingCard({
               justifyContent="space-between"
             >
               <Typography
-                variant="subtitle1"
+                variant="h6"
                 sx={{
                   fontWeight: 700,
                   lineHeight: 1.25,
@@ -448,7 +449,11 @@ export default function ListingCard({
           {/* Pricing block */}
           <PriceContainer>
             {hasDiscount && (
-              <DiscountBadge label={`${discountPct}% OFF`} size="small" />
+              <DiscountBadge
+                icon={<CheckCircleRounded color="inherit" />}
+                label={`${discountPct}% OFF`}
+                size="small"
+              />
             )}
 
             <Stack direction="row" alignItems="baseline" spacing={1}>

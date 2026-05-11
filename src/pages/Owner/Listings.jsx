@@ -8,6 +8,7 @@ import {
   FormControl,
   InputLabel,
   InputAdornment,
+  Grid,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
@@ -21,22 +22,20 @@ import { useListingImages } from "@/hooks/useImageCache.js";
 import { useBranch } from "@/hooks/useBranches.js";
 import { VEHICLE_TYPES, AVAILABILITY_STATUS } from "@/utils/constants.js";
 
-function ListingRow({ listing, branchId }) {
-  const navigate = useNavigate();
-
-  // useListingImages now takes the full listing and returns URL array directly
+function ListingGridItem({ listing, navigate }) {
   const imageUrls = useListingImages(listing);
-
   return (
-    <ListingCard
-      listing={listing}
-      imageUrls={imageUrls}
-      showEdit
-      onEdit={() => navigate(`/owner/listings/${listing.id}/edit`)}
-      onShare={() => {
-        console.log("test sharing");
-      }}
-    />
+    <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+      <ListingCard
+        listing={listing}
+        imageUrls={imageUrls}
+        showEdit
+        onEdit={() => navigate(`/owner/listings/${listing.id}/edit`)}
+        onShare={() => {
+          console.log("test sharing");
+        }}
+      />
+    </Grid>
   );
 }
 
@@ -58,8 +57,9 @@ export default function OwnerListings() {
         listing.vehicleName
           ?.toLowerCase()
           .includes(searchQuery.toLowerCase()) ||
-        listing.vehicleNumber
-          ?.toLowerCase()
+        listing.vehicleNumbers
+          ?.map((v) => v.toLowerCase())
+          .join(", ")
           .includes(searchQuery.toLowerCase());
 
       const isAvailable = !listing.isBooked && listing.isPublished;
@@ -163,9 +163,11 @@ export default function OwnerListings() {
             )}
           </Box>
         ) : (
-          filteredListings.map((l) => (
-            <ListingRow key={l.id} listing={l} branchId={branchId} />
-          ))
+          <Grid container spacing={1}>
+            {filteredListings.map((l) => (
+              <ListingGridItem key={l.id} listing={l} navigate={navigate} />
+            ))}
+          </Grid>
         )}
       </Box>
 

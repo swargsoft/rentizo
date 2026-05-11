@@ -51,9 +51,23 @@ const reviewAverages = useLiveQuery(async () => {
   return avgs
 }, [branches?.map(b => b.id).join(',')])  // ← same stable dep
 
-  const filtered = (branches ?? []).filter(b =>
-    !search || b.branchName.toLowerCase().includes(search.toLowerCase()) || b.address.toLowerCase().includes(search.toLowerCase())
-  )
+  const vehicleNumbersMap = useLiveQuery(async () => {
+    if (!branches?.length) return {}
+    const map = {}
+    await Promise.all(branches.map(async b => {
+      const listings = await db.listings.where('branchId').equals(b.id).toArray()
+      map[b.id] = listings.map(l => l.vehicleNumber?.toLowerCase() || '').join(' ')
+    }))
+    return map
+  }, [branches?.map(b => b.id).join(',')])
+
+  const filtered = (branches ?? []).filter(b => {
+    if (!search) return true
+    const s = search.toLowerCase()
+    return b.branchName.toLowerCase().includes(s) ||
+      b.address.toLowerCase().includes(s) ||
+      (vehicleNumbersMap?.[b.id] || '').includes(s)
+  })
 
   function handleBranchSelect(branch) {
     setSelectedBranch(branch)
